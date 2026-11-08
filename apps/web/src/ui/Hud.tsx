@@ -3,10 +3,11 @@ import { cardLabel, legalCommands, MAX_PLAYERS, MIN_PLAYERS, type Card, type Com
 import { seatLayouts } from '../game/layout';
 import { LOCAL_ID, useGame } from '../game/store';
 import { cardUrl } from '../three/textures';
+import { play, setSoundEnabled, useSoundPrefs } from '../audio/sound';
 import { setLang, t } from './i18n';
 import { RulesList, RulesModal, SettingsModal } from './Modals';
 import { useLang } from './prefs';
-import { IconAttack, IconCharge, IconLeave, IconLifeSwap, IconLog, IconNewShield, IconPlayers, IconRules, IconSettings, IconSwapShield, IconWait, IconWinner } from './icons';
+import { IconAttack, IconCharge, IconLeave, IconLifeSwap, IconLog, IconMuted, IconSound, IconNewShield, IconPlayers, IconRules, IconSettings, IconSwapShield, IconWait, IconWinner } from './icons';
 
 const FAN: Card[] = [
   { id: 'f1', suit: 'S', rank: 1 },
@@ -189,7 +190,14 @@ function ActionBar() {
   }
 
   const button = (cls: string, icon: React.ReactNode, name: string, sub: string, key: string, onClick: () => void) => (
-    <button className={`act ${cls}`} onClick={onClick} title={`${name} : ${sub}`}>
+    <button
+      className={`act ${cls}`}
+      onClick={() => {
+        play('tap', { volume: 0.6 });
+        onClick();
+      }}
+      title={`${name} : ${sub}`}
+    >
       <span className="act-icon">{icon}</span>
       <span className="act-name">{name}</span>
       <span className="act-sub">{sub}</span>
@@ -313,6 +321,9 @@ function GameOver() {
 function TurnBanner() {
   useLang();
   const n = useGame((s) => s.yourTurn);
+  useEffect(() => {
+    if (n > 0) play('knock', { volume: 0.8 });
+  }, [n]);
   if (n === 0) return null;
   return (
     <div key={n} className="turn-banner" aria-live="assertive">
@@ -327,6 +338,7 @@ export function Hud() {
   const back = useGame((s) => s.backToLobby);
   const [modal, setModal] = useState<null | 'rules' | 'settings'>(null);
   const [logOpen, setLogOpen] = useState(() => window.innerWidth > 760);
+  const sound = useSoundPrefs();
   if (!shown) return null;
   const current = shown.players.find((p) => p.id === shown.current);
   const mine = shown.current === LOCAL_ID && shown.phase !== 'over';
@@ -340,6 +352,9 @@ export function Hud() {
         )}
         <div className="spacer" />
         <div className="tools">
+          <button className="icon-btn" onClick={() => setSoundEnabled(!sound.enabled)} title={t('top.sound')} aria-label={t('top.sound')} aria-pressed={sound.enabled}>
+            {sound.enabled ? <IconSound /> : <IconMuted />}
+          </button>
           <button className={`icon-btn ${logOpen ? 'on' : ''}`} onClick={() => setLogOpen((o) => !o)} title={t('top.log')} aria-label={t('top.log')} aria-pressed={logOpen}>
             <IconLog />
           </button>

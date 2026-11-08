@@ -1,6 +1,7 @@
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import gsap from 'gsap';
+import { unlockAudio } from './audio/sound';
 import { setPortrait } from './game/layout';
 import { useGame } from './game/store';
 import { Scene } from './three/Scene';
@@ -16,6 +17,8 @@ import { t } from './ui/i18n';
 gsap.ticker.lagSmoothing(0);
 
 document.documentElement.lang = getLang();
+// Browsers start audio only after a user gesture.
+for (const ev of ['pointerdown', 'keydown'] as const) window.addEventListener(ev, unlockAudio, { passive: true });
 
 function Loading() {
   return (

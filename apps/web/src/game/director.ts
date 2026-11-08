@@ -18,6 +18,7 @@ import {
   type SeatLayout,
   type Vec3,
 } from './layout';
+import { play } from '../audio/sound';
 import { t, tYou } from '../ui/i18n';
 import { LOCAL_ID, nextId, useGame, type FlyerSpec, type LogLine, type Overrides, type UiEvent } from './store';
 
@@ -145,6 +146,7 @@ function bumpDiscard(n: number) {
 }
 
 function drawFromDeck() {
+  play('slide', { volume: 0.7 });
   ov((o) => {
     o.deckDelta -= 1;
   });
@@ -169,6 +171,7 @@ async function toDiscard(items: { id: string; from: Vec3; card: Card; flip?: num
         arc: 1.2,
       });
       bumpDiscard(1);
+      play('place', { volume: 0.45 });
       ov((o) => {
         o.discardTop = it.card;
       });
@@ -181,6 +184,7 @@ export async function animateEvent(e: UiEvent): Promise<void> {
   const S = seats();
   switch (e.type) {
     case 'shuffle': {
+      play('shuffle');
       // Two riffles: the deck splits left and right, then the halves interleave back.
       const d = deckPos();
       const n = 10;
@@ -250,6 +254,7 @@ export async function animateEvent(e: UiEvent): Promise<void> {
             ease: 'power2.out',
             glow: faceUp ? null : '#5aa9ff',
           });
+          play('place', { volume: 0.35 });
           updatePlayer(o.pid, (p) =>
             o.slot === 'shield' ? { ...p, shield: { hidden: true } } : { ...p, life: o.card ? [...p.life, o.card] : p.life },
           );
@@ -268,6 +273,7 @@ export async function animateEvent(e: UiEvent): Promise<void> {
     }
 
     case 'reshuffle': {
+      play('shuffle', { volume: 0.8 });
       log(t('log.reshuffle', { n: e.count }), 'neutral');
       ov((o) => {
         o.discardCount = 0;
@@ -301,6 +307,7 @@ export async function animateEvent(e: UiEvent): Promise<void> {
         toScale: seat.scale,
       });
       burst(slotPos(seat, 'charge'), '#ffb347', 0.7);
+      play('shove');
       popup(seat.tile ? popupPos(seat) : lift(slotPos(seat, 'charge'), 0.5), t('pop.charge', { n: e.chargeCount }), 'info');
       log(tYou('log.charge', you(e.player), { name: nm(e.player), n: e.chargeCount }), 'charge');
       // The committed view will show the new stack at the same spot.
@@ -331,6 +338,7 @@ export async function animateEvent(e: UiEvent): Promise<void> {
         toScale: target.scale,
       });
       burst(oldPos, '#5aa9ff', 0.9);
+      play('place');
       await discarding;
       useGame.setState({
         shown: {
@@ -404,6 +412,7 @@ export async function animateEvent(e: UiEvent): Promise<void> {
           }),
         ),
       );
+      play('fan', { volume: 0.6 });
       popup(lift(hoverPos(atk), 1.35), t('pop.atk', { n: e.attack }), 'info');
       await wait(380);
 
@@ -434,6 +443,7 @@ export async function animateEvent(e: UiEvent): Promise<void> {
         ov((o) => {
           o.hideShield[e.target] = true;
         });
+        play('fan', { volume: 0.5 });
         await fly('shieldflip', {
           card: e.shield,
           from: shieldAt,
@@ -453,6 +463,7 @@ export async function animateEvent(e: UiEvent): Promise<void> {
         clear('shieldflip');
       }
       burst(shieldAt, e.damage > 0 ? '#ff4b3a' : '#5aa9ff', e.damage > 0 ? 1.4 : 1.1);
+      play(e.damage > 0 ? 'hit' : 'block', { volume: e.damage > 0 ? Math.min(1, 0.6 + e.damage / 20) : 0.8 });
       ov((o) => {
         o.hp[e.target] = e.hpAfter;
       });
@@ -487,6 +498,7 @@ export async function animateEvent(e: UiEvent): Promise<void> {
       });
       popup(popupPos(seat, seat.tile ? undefined : 'charge'), t('pop.chargeBroken'), 'damage', t('pop.chargeBroken.sub', { n: e.attack }));
       burst(slotPos(seat, 'charge'), '#ffb347', 1.1);
+      play('break', { volume: 0.7 });
       log(tYou('log.chargeLost', you(e.player), { name: nm(e.player), cards: e.cards.map(cardLabel).join(' + ') }), 'out');
       await toDiscard(
         e.cards.map((card, i) => ({
@@ -509,6 +521,7 @@ export async function animateEvent(e: UiEvent): Promise<void> {
     case 'chargeHeld': {
       const seat = S.get(e.player)!;
       burst(slotPos(seat, 'charge'), '#ffb347', 0.8);
+      play('tap');
       popup(popupPos(seat, seat.tile ? undefined : 'charge'), t('pop.chargeHolds'), 'info', t('pop.chargeHolds.sub', { n: e.attack }));
       log(tYou('log.chargeHeld', you(e.player), { name: nm(e.player), n: e.attack }), 'charge');
       await wait(500);
@@ -520,6 +533,7 @@ export async function animateEvent(e: UiEvent): Promise<void> {
       log(tYou('log.eliminated', you(e.player), { name: nm(e.player) }), 'out');
       popup(seat.tile ? popupPos(seat) : lift(seat.pos, 1.6), t('pop.eliminated'), 'damage');
       burst(seat.pos, '#ff4b3a', 2);
+      play('bell', { volume: 0.75 });
       useGame.setState((s) => ({ shake: s.shake + 0.6 }));
       ov((o) => {
         o.hideLife[e.player] = true;
@@ -567,6 +581,7 @@ export async function animateEvent(e: UiEvent): Promise<void> {
       });
       await discarding;
       burst(slotPos(seat, 'life0'), '#5dff9a', 1);
+      play('chime');
       popup(popupPos(seat), t('pop.hp', { n: e.hpAfter }), e.hpAfter >= e.hpBefore ? 'heal' : 'damage', t('pop.lifeReplaced', { n: e.hpBefore }));
       useGame.setState({
         shown: {
@@ -629,6 +644,7 @@ export async function animateEvent(e: UiEvent): Promise<void> {
         });
         await discarding;
         burst(slotPos(seat, 'life0'), '#5dff9a', 1);
+        play('chime');
         popup(popupPos(seat), t('pop.hp', { n: e.hpAfter }), 'heal', t('pop.lifeReplacedShort'));
         useGame.setState({
           shown: {
@@ -659,6 +675,8 @@ export async function animateEvent(e: UiEvent): Promise<void> {
       log(tYou('log.win', you(e.winner), { name: nm(e.winner) }), 'life');
       const seat = S.get(e.winner)!;
       burst(seat.pos, '#f2d38f', 1.6);
+      play('bell');
+      play('fan', { delay: 0.25 });
       useGame.setState({ focus: e.winner });
       await wait(1400);
       return;

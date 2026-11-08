@@ -18,6 +18,8 @@ import {
   GiPowerLightning,
   GiScrollUnfurled,
   GiShield,
+  GiSpeaker,
+  GiSpeakerOff,
   GiTabletopPlayers,
 } from 'react-icons/gi';
 
@@ -37,3 +39,5 @@ export const IconOut = GiDeathSkull;
 export const IconWinner = GiLaurelCrown;
 export const IconWait = GiHourglass;
 export const IconPlayers = GiTabletopPlayers;
+export const IconSound = GiSpeaker;
+export const IconMuted = GiSpeakerOff;

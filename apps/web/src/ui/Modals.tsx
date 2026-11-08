@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react';
 import { useGame } from '../game/store';
 import { setLang, t, type Lang } from './i18n';
 import { setMotion, useLang, useMotion } from './prefs';
+import { play, setSoundEnabled, setVolume, useSoundPrefs } from '../audio/sound';
 import { IconAttack, IconCharge, IconClose, IconNewShield, IconSwapShield } from './icons';
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
@@ -70,6 +71,7 @@ export function RulesModal({ onClose }: { onClose: () => void }) {
 export function SettingsModal({ onClose }: { onClose: () => void }) {
   const lang = useLang();
   const motion = useMotion();
+  const sound = useSoundPrefs();
   const speed = useGame((s) => s.speed);
   const setSpeed = useGame((s) => s.setSpeed);
   const seg = <T extends string | number>(value: T, options: [T, string][], set: (v: T) => void) => (
@@ -88,6 +90,21 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         {seg<Lang>(lang, [['fr', 'Français'], ['en', 'English']], setLang)}
         <label>{t('settings.speed')}</label>
         {seg<number>(speed, [[1, '1×'], [1.5, '1.5×'], [2.5, '2.5×']], setSpeed)}
+        <label>{t('settings.sound')}</label>
+        <div className="sound-row">
+          {seg(sound.enabled ? 'on' : 'off', [['on', t('settings.sound.on')], ['off', t('settings.sound.off')]], (v) => setSoundEnabled(v === 'on'))}
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={sound.volume}
+            disabled={!sound.enabled}
+            aria-label={t('settings.volume')}
+            onChange={(e) => setVolume(Number(e.target.value))}
+            onPointerUp={() => play('place')}
+          />
+        </div>
         <label>{t('settings.motion')}</label>
         {seg(motion, [['full', t('settings.motion.full')], ['reduced', t('settings.motion.reduced')]], setMotion)}
       </div>

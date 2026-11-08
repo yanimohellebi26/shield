@@ -1207,6 +1207,17 @@ kbd {
   color: var(--muted);
 }
 
+.sound-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.sound-row input[type='range'] {
+  width: 140px;
+  accent-color: var(--gold);
+}
+
 /* ================================================================ phones */
 
 @media (max-width: 760px) {

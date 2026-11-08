@@ -33,18 +33,19 @@ export interface RuleOptions {
   maxCharge: number;
   /**
    * When a hit threatens the target's charge:
-   * 'beats' (default) — damage > 0 and attack > charge; 'anyDamage' — any damaging hit; 'never'.
+   * 'anyDamage' (default) — any hit that gets through the shield; 'beats' — damage > 0 and attack > charge; 'never'.
    */
   chargeLoss: 'beats' | 'anyDamage' | 'never';
   /** The very first turn of the game cannot be an attack (evens out the first-player edge). */
   noAttackFirstTurn: boolean;
   /** In a 2-player game, the second player starts with one card already charged (hidden). */
   secondPlayerCharge: boolean;
-  /** In a 2-player game, extra starting HP for the second player. */
+  /** In a 2-player game, extra starting HP for the second player (default 3: evens out the first-player edge). */
   secondPlayerHp: number;
 }
 
-export const DEFAULT_RULES: RuleOptions = { maxCharge: Infinity, chargeLoss: 'beats', noAttackFirstTurn: false, secondPlayerCharge: false, secondPlayerHp: 0 };
+/** Standard rules (SHIELD_REGLES.md §14), chosen on 2026-11-08 from the balance study in docs/EQUILIBRAGE.md. */
+export const DEFAULT_RULES: RuleOptions = { maxCharge: Infinity, chargeLoss: 'anyDamage', noAttackFirstTurn: false, secondPlayerCharge: false, secondPlayerHp: 3 };
 
 export interface GameState {
   players: Player[];
@@ -109,9 +110,9 @@ export type GameEvent =
       hpBefore: number;
       hpAfter: number;
     }
-  /** The attacked player took damage and the attack exceeded their charge: the charge is discarded (face up). */
+  /** The attacked player took damage that broke their charge: the charge is discarded (face up). */
   | { type: 'chargeLost'; player: string; cards: Card[]; attack: number }
-  /** The attacked player took damage but the attack did not exceed their charge. Values stay secret. */
+  /** Variant 'beats' only: the attacked player took damage but the attack did not exceed their charge. Values stay secret. */
   | { type: 'chargeHeld'; player: string; attack: number }
   | { type: 'eliminated'; player: string; discarded: Card[] }
   | { type: 'pass'; player: string }

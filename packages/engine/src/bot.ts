@@ -42,12 +42,18 @@ export function chooseBotCommand(view: GameView, legal: Command[], random: () =>
         score = dmg + (dmg >= t.hp ? 8 : 0) + (26 - t.hp) * 0.08;
         break;
       }
-      case 'charge':
-        score = me.chargeCount < 2 ? 3.2 : 0.8;
-        break;
-      case 'shieldSelf': {
+      case 'charge': {
+        // Any hit that gets through loses the whole charge, so a bigger pile is a bigger bet.
+        // Charge less when already holding cards, when our shield is weak or known, and at busy tables.
         const mine = me.shield && !isHidden(me.shield) ? me.shield.rank : EXPECTED;
-        score = (EXPECTED - mine) * 0.9 + (me.hp < 8 ? 1 : 0);
+        const opponents = view.players.filter((p) => !p.eliminated && p.id !== me.id).length;
+        score = 3.4 - me.chargeCount * 1.5 - (mine < EXPECTED ? 1.2 : 0) - (opponents >= 3 ? 0.6 : 0);
+        break;
+      }
+      case 'shieldSelf': {
+        // A weak revealed shield exposes us; it matters more when it protects a charge.
+        const mine = me.shield && !isHidden(me.shield) ? me.shield.rank : EXPECTED;
+        score = (EXPECTED - mine) * 0.9 + (me.hp < 8 ? 1 : 0) + (mine < EXPECTED ? me.chargeCount * 0.8 : 0);
         break;
       }
       case 'shieldOther': {

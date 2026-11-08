@@ -25,7 +25,8 @@ function SeatBadge({ player, seat }: { player: PlayerView; seat: SeatLayout }) {
 
   const isLocal = player.id === LOCAL_ID;
   const dealing = useGame((s) => s.dealing);
-  const hp = dealing ? player.life.reduce((t, c) => t + c.rank, 0) : (ov.hp[player.id] ?? player.hp);
+  const bonus = useGame((s) => s.hpBonus[player.id] ?? 0);
+  const hp = dealing ? player.life.reduce((t, c) => t + c.rank, 0) + (player.life.length === 2 ? bonus : 0) : (ov.hp[player.id] ?? player.hp);
   const out = !dealing && (player.eliminated || hp <= 0);
   const active = focus === player.id && !out;
   const targetable = !!targeting && !isLocal && !out;
@@ -78,7 +79,8 @@ function OpponentTile({ player, seat }: { player: PlayerView; seat: SeatLayout }
   const targeting = useGame((s) => s.targeting);
   const pickTarget = useGame((s) => s.pickTarget);
   const dealing = useGame((s) => s.dealing);
-  const hp = dealing ? player.life.reduce((t, c) => t + c.rank, 0) : (ov.hp[player.id] ?? player.hp);
+  const bonus = useGame((s) => s.hpBonus[player.id] ?? 0);
+  const hp = dealing ? player.life.reduce((t, c) => t + c.rank, 0) + (player.life.length === 2 ? bonus : 0) : (ov.hp[player.id] ?? player.hp);
   const out = !dealing && (player.eliminated || hp <= 0);
   const active = focus === player.id && !out;
   const targetable = !!targeting && !out;

@@ -25,7 +25,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   );
 }
 
-const RULE_KEYS = ['rules.life', 'rules.shield', 'rules.turn', 'rules.damage', 'rules.chargeRisk', 'rules.lifeSwap', 'rules.values'] as const;
+const RULE_KEYS = ['rules.life', 'rules.shield', 'rules.turn', 'rules.damage', 'rules.chargeRisk', 'rules.lifeSwap', 'rules.secondBonus', 'rules.values'] as const;
 
 export function RulesList() {
   useLang();

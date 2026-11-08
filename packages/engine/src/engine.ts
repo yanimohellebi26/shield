@@ -64,8 +64,12 @@ export function createGame(opts: NewGameOptions): GameState {
     first = Math.floor(r * n);
   }
 
-  if (opts.rules?.secondPlayerCharge && n === 2) players[(first + 1) % n]!.charge.push(take());
-  if (opts.rules?.secondPlayerHp && n === 2) players[(first + 1) % n]!.hp += opts.rules.secondPlayerHp;
+  const rules: RuleOptions = { ...DEFAULT_RULES, ...opts.rules };
+  if (n === 2) {
+    const second = players[(first + 1) % n]!;
+    if (rules.secondPlayerCharge) second.charge.push(take());
+    second.hp += rules.secondPlayerHp;
+  }
   const state: GameState = { players, deck, discard: [], current: first, phase: 'action', turn: 1, lifeOffer: null, winner: null, rng, seq: 0 };
   if (opts.rules) state.rules = { ...opts.rules };
   return state;
@@ -252,8 +256,8 @@ function resolveAction(state: GameState, me: Player, action: Action, events: Gam
       if (target.hp <= 0) {
         eliminate(state, target, events);
       } else if (damage > 0 && target.charge.length > 0 && rulesOf(state).chargeLoss !== 'never') {
-        // A hit that gets through threatens the target's charge: an attack strictly greater
-        // than the charge breaks it. The comparison is secret when the charge holds.
+        // A hit that gets through breaks the target's charge (standard rule). In the 'beats'
+        // variant only an attack strictly greater than the charge breaks it, compared in secret.
         if (rulesOf(state).chargeLoss === 'anyDamage' || attack > sum(target.charge)) {
           const cards = target.charge;
           target.charge = [];

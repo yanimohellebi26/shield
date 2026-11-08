@@ -1,4 +1,5 @@
 import { chooseBotCommand } from '../src/bot';
+import { legacyBotCommand } from './legacyBot';
 import { isHidden, type GameView } from '../src/view';
 import type { Command } from '../src/types';
 
@@ -42,6 +43,8 @@ function chargeThen(k: number): Strategy {
 export const STRATEGIES: Record<string, Strategy> = {
   /** The shipped bot. */
   smart: chooseBotCommand,
+  /** The bot as it was before the charge rule changed. */
+  legacy: legacyBotCommand,
   /** Any legal move. */
   random: (v, legal, r) => (v.phase === 'lifeOffer' ? pick(legal, r) : pick(legal, r)),
   /** Never charges: attacks every turn. */

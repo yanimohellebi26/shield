@@ -13,7 +13,7 @@ import {
   type GameView,
 } from '@shield/engine';
 import type { Vec3 } from './layout';
-import { t } from '../ui/i18n';
+import { t, tYou } from '../ui/i18n';
 
 export const LOCAL_ID = 'you';
 
@@ -136,6 +136,8 @@ interface Store {
   stats: Stats;
   /** Incremented each time the local player's turn begins (drives the "your turn" banner). */
   yourTurn: number;
+  /** Starting HP not coming from life cards (2-player second-seat bonus), shown during the deal. */
+  hpBonus: Record<string, number>;
   ov: Overrides;
   log: LogLine[];
   focus: string | null;
@@ -174,6 +176,7 @@ export const useGame = create<Store>((set, get) => ({
   dealing: false,
   stats: noStats(),
   yourTurn: 0,
+  hpBonus: {},
   ov: noOverrides(),
   log: [],
   focus: null,
@@ -206,7 +209,16 @@ export const useGame = create<Store>((set, get) => ({
       dealing: true,
       ov: noOverrides(),
       stats: noStats(),
-      log: [{ id: Date.now(), text: first.id === LOCAL_ID ? t('log.first.you') : t('log.first', { name: first.name }), tone: 'neutral' }],
+      hpBonus: Object.fromEntries(game.players.map((p) => [p.id, p.hp - p.life.reduce((t, c) => t + c.rank, 0)])),
+      log: [
+        { id: Date.now(), text: first.id === LOCAL_ID ? t('log.first.you') : t('log.first', { name: first.name }), tone: 'neutral' },
+        ...(game.players.length === 2
+          ? (() => {
+              const second = game.players[(game.current + 1) % 2]!;
+              return [{ id: Date.now() + 1, text: tYou('log.secondBonus', second.id === LOCAL_ID, { name: second.name }), tone: 'life' as const }];
+            })()
+          : []),
+      ],
       focus: null,
     });
     setTimeout(() => {

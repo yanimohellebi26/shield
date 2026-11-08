@@ -77,7 +77,7 @@ const VARIANTS: [string, Partial<RuleOptions>][] = [
   ['lost on any hit + 2p hp+3', { chargeLoss: 'anyDamage', secondPlayerHp: 3 }],
 ];
 const ONLY = process.env.ONLY;
-const CHALLENGERS = ['random', 'aggressive', 'charge1', 'charge2', 'charge3', 'charge4', 'defender'];
+const CHALLENGERS = ['legacy', 'random', 'aggressive', 'charge1', 'charge2', 'charge3', 'charge4', 'defender'];
 
 it('balance report', () => {
   const GAMES = Number(process.env.GAMES ?? 1000);

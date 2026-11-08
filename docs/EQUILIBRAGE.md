@@ -39,3 +39,14 @@ Méthode : simulations du moteur de règles (`npm run balance -w @shield/engine`
 
 Les deux variantes sont déjà dans le moteur (`rules: { chargeLoss: 'anyDamage', secondPlayerHp: 3 }`), désactivées par défaut.
 Après décision, le bot devra être réajusté à la nouvelle règle de charge.
+
+## Décisions (8 novembre 2026)
+
+L'auteur a retenu les deux recommandations, devenues les règles par défaut du moteur :
+- charge perdue sur tout coup qui fait des dégâts ;
+- à 2 joueurs, +3 HP pour le second joueur.
+
+Résultats avec ces règles et le bot réajusté (1 200 parties par mesure) :
+- 2 joueurs : 4,5 tours de table, premier joueur 51,8 %.
+- Le meilleur rythme devient « charger une fois puis frapper » ; empiler 2 cartes ou plus fait tomber à 10–23 % de victoires.
+- Actions sur les boucliers : 9 % (contre 7 %).

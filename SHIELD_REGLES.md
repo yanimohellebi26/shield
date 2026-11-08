@@ -390,7 +390,8 @@ Ce fichier constitue la transcription des règles connues et de leurs limites ac
 | 11 | Nombre de joueurs | **2 à 8 joueurs.** |
 | — | Un seul bouclier | Chaque joueur a **un seul bouclier** à la fois, face cachée tant qu'il n'a pas été attaqué, face visible ensuite. |
 | 1–3 | Charge empilée et secrète | Les cartes de charge sont **empilées** en une seule pile. Personne, propriétaire compris, ne connaît la charge avant que son propriétaire frappe. |
-| — | Charge menacée (précision du 8 novembre 2026) | Si un joueur qui a une charge **subit des dégâts** (l'attaque dépasse son bouclier) et que la valeur de l'attaque est **strictement plus grande** que sa charge, il **perd sa charge** (cartes à la défausse, face visible). Si l'attaque est inférieure ou égale, la charge est conservée et **reste secrète** : seul « la charge tient » est annoncé. Si le bouclier bloque tout (0 dégât), la charge n'est pas menacée. |
+| — | Charge menacée (révisée après l'étude d'équilibrage, `docs/EQUILIBRAGE.md`) | Si un joueur qui a une charge **subit des dégâts** (l'attaque dépasse son bouclier), il **perd toute sa charge** (cartes à la défausse, face visible), quelle que soit sa valeur. Si le bouclier bloque tout (0 dégât), la charge n'est pas menacée. *Règle précédente, abandonnée : perte seulement si l'attaque dépassait la charge ; elle rendait l'accumulation de charges dominante.* |
+| — | Partie à deux joueurs | Le joueur qui joue **en second commence avec 3 HP de plus** (compense l'avantage du premier joueur : 55–57 % de victoires sans bonus, 51–52 % avec). |
 
 ### 14.2 Valeurs par défaut proposées (modifiables)
 

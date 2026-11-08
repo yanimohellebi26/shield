@@ -159,17 +159,24 @@ describe('charge', () => {
 });
 
 describe('charge under attack', () => {
-  it('is lost when a damaging attack is greater than the charge', () => {
-    const s = game([{}, { shield: 2, charge: [3, 4] }], [9]);
+  it('is lost on any hit that gets through the shield, whatever its value', () => {
+    const s = game([{}, { shield: 2, charge: [10, 10] }], [5]);
+    const { state, events } = apply(s, 'p0', attack('p1'));
+    expect(events.map((e) => e.type)).toEqual(['attack', 'chargeLost', 'turnStart']);
+    expect(state.players[1]!.charge).toHaveLength(0);
+  });
+
+  it("variant 'beats': lost when a damaging attack is greater than the charge", () => {
+    const s = { ...game([{}, { shield: 2, charge: [3, 4] }], [9]), rules: { chargeLoss: 'beats' as const } };
     const { state, events } = apply(s, 'p0', attack('p1'));
     expect(events.map((e) => e.type)).toEqual(['attack', 'chargeLost', 'turnStart']);
     expect(state.players[1]!.charge).toHaveLength(0);
     expect(state.discard.map((c) => c.rank)).toEqual([9, 3, 4]);
   });
 
-  it('holds on a tie or a smaller attack, without revealing its value', () => {
+  it("variant 'beats': holds on a tie or a smaller attack, without revealing its value", () => {
     for (const card of [7, 5]) {
-      const s = game([{}, { shield: 2, charge: [3, 4] }], [card]);
+      const s = { ...game([{}, { shield: 2, charge: [3, 4] }], [card]), rules: { chargeLoss: 'beats' as const } };
       const { state, events } = apply(s, 'p0', attack('p1'));
       const held = events.find((e) => e.type === 'chargeHeld');
       expect(held).toEqual({ type: 'chargeHeld', player: 'p1', attack: card });
@@ -192,9 +199,17 @@ describe('rule variants (balance testing)', () => {
     expect(legalCommands(s, 'p0')).not.toContainEqual(charge);
   });
 
-  it("chargeLoss 'anyDamage' breaks the charge on any hit that gets through", () => {
-    const s = { ...game([{}, { shield: 2, charge: [10, 10] }], [5]), rules: { chargeLoss: 'anyDamage' as const } };
-    expect(apply(s, 'p0', attack('p1')).state.players[1]!.charge).toHaveLength(0);
+  it("chargeLoss 'never' keeps the charge whatever happens", () => {
+    const s = { ...game([{}, { shield: 2, charge: [1] }], [13]), rules: { chargeLoss: 'never' as const } };
+    expect(apply(s, 'p0', attack('p1')).state.players[1]!.charge).toHaveLength(1);
+  });
+
+  it('in a 2-player game the second player starts with +3 HP', () => {
+    const deck = [C(12), C(7), C(3), C(5), C(5), C(1), ...fullDeck()];
+    const s = createGame({ players: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }], deckTopFirst: deck, first: 0 });
+    expect(s.players.map((p) => p.hp)).toEqual([19, 13]);
+    const three = createGame({ players: ['a', 'b', 'c'].map((id) => ({ id, name: id })), deckTopFirst: [...deck, C(2), C(2), C(2)], first: 0 });
+    expect(three.players[1]!.hp).toBe(10);
   });
 
   it('noAttackFirstTurn forbids attacking on turn 1 only', () => {

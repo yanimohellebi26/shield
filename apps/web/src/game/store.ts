@@ -13,6 +13,7 @@ import {
   type GameView,
 } from '@shield/engine';
 import type { Vec3 } from './layout';
+import type { LobbyInfo } from '../net/online';
 import { t, tYou } from '../ui/i18n';
 
 export const LOCAL_ID = 'you';
@@ -118,9 +119,20 @@ export interface LogLine {
   tone: 'neutral' | 'hit' | 'block' | 'shield' | 'charge' | 'life' | 'out';
 }
 
+export type NetStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error';
+
 interface Store {
-  screen: 'lobby' | 'game';
+  /** 'room' = waiting room of an online table. */
+  screen: 'lobby' | 'room' | 'game';
+  mode: 'local' | 'online';
+  /** Full game state — local games only; online, the server keeps it. */
   game: GameState | null;
+  /** What the local player may do now (from the engine locally, from the server online). */
+  legal: Command[];
+  /** Online waiting room / table info. */
+  table: LobbyInfo | null;
+  netStatus: NetStatus;
+  netError: string | null;
   /** What the table currently shows: lags behind `game` while animations play. */
   shown: GameView | null;
   queue: { events: UiEvent[]; view: GameView }[];
@@ -150,6 +162,10 @@ interface Store {
   setTargeting: (t: Targeting) => void;
   pickTarget: (id: string) => void;
   setSpeed: (s: number) => void;
+  onLobby: (info: LobbyInfo) => void;
+  onOnlineStart: (view: GameView, legal: Command[]) => void;
+  onOnlineUpdate: (events: GameEvent[], view: GameView, legal: Command[]) => void;
+  onOnlineResume: (view: GameView, legal: Command[]) => void;
 }
 
 let botTimer: ReturnType<typeof setTimeout> | undefined;
@@ -161,9 +177,43 @@ const START_SPEED = Number(params.get('speed')) || 1;
 /** Bumped on every new game, so stale animation loops stop. */
 let generation = 0;
 
+/** Table opening shared by local and online games: shuffle and deal animations, first log lines. */
+function openingState(view: GameView): Partial<Store> {
+  const first = view.players.find((p) => p.id === view.current)!;
+  const n = view.players.length;
+  const second = n === 2 ? view.players[(view.players.indexOf(first) + 1) % 2]! : null;
+  // The table starts empty with a full deck; the shuffle and deal fill it.
+  const empty: GameView = { ...view, deckCount: 52, players: view.players.map((p) => ({ ...p, life: [], shield: null, chargeCount: 0 })) };
+  generation++;
+  return {
+    screen: 'game',
+    shown: empty,
+    queue: [{ events: [{ type: 'shuffle' }, { type: 'deal', view }], view }],
+    busy: false,
+    targeting: null,
+    flyers: {},
+    popups: [],
+    bursts: [],
+    dealing: true,
+    ov: noOverrides(),
+    stats: noStats(),
+    hpBonus: Object.fromEntries(view.players.map((p) => [p.id, p.hp - p.life.reduce((t, c) => t + c.rank, 0)])),
+    log: [
+      { id: Date.now(), text: first.id === LOCAL_ID ? t('log.first.you') : t('log.first', { name: first.name }), tone: 'neutral' },
+      ...(second ? [{ id: Date.now() + 1, text: tYou('log.secondBonus', second.id === LOCAL_ID, { name: second.name }), tone: 'life' as const }] : []),
+    ],
+    focus: null,
+  };
+}
+
 export const useGame = create<Store>((set, get) => ({
   screen: 'lobby',
+  mode: 'local',
   game: null,
+  legal: [],
+  table: null,
+  netStatus: 'idle',
+  netError: null,
   shown: null,
   queue: [],
   busy: false,
@@ -187,63 +237,57 @@ export const useGame = create<Store>((set, get) => ({
     const bots = [...BOT_NAMES].sort(() => Math.random() - 0.5).slice(0, count - 1);
     const players = [{ id: LOCAL_ID, name: name.trim() || t('lobby.namePlaceholder') }, ...bots.map((b, i) => ({ id: `bot${i}`, name: b }))];
     const game = createGame({ players, seed: (Math.random() * 2 ** 32) >>> 0 });
-    const first = game.players[game.current]!;
-    const view = viewFor(game, LOCAL_ID);
-    // The table starts empty with a full deck; the opening shuffle and deal fill it.
-    const empty: GameView = {
-      ...view,
-      deckCount: 52,
-      players: view.players.map((p) => ({ ...p, life: [], shield: null, chargeCount: 0 })),
-    };
-    generation++;
-    set({
-      screen: 'game',
-      game,
-      shown: empty,
-      queue: [{ events: [{ type: 'shuffle' }, { type: 'deal', view }], view }],
-      busy: false,
-      targeting: null,
-      flyers: {},
-      popups: [],
-      bursts: [],
-      dealing: true,
-      ov: noOverrides(),
-      stats: noStats(),
-      hpBonus: Object.fromEntries(game.players.map((p) => [p.id, p.hp - p.life.reduce((t, c) => t + c.rank, 0)])),
-      log: [
-        { id: Date.now(), text: first.id === LOCAL_ID ? t('log.first.you') : t('log.first', { name: first.name }), tone: 'neutral' },
-        ...(game.players.length === 2
-          ? (() => {
-              const second = game.players[(game.current + 1) % 2]!;
-              return [{ id: Date.now() + 1, text: tYou('log.secondBonus', second.id === LOCAL_ID, { name: second.name }), tone: 'life' as const }];
-            })()
-          : []),
-      ],
-      focus: null,
-    });
-    setTimeout(() => {
-      void pump();
-    }, 350);
+    set({ ...openingState(viewFor(game, LOCAL_ID)), mode: 'local', game, legal: legalCommands(game, LOCAL_ID) });
+    setTimeout(() => void pump(), 350);
   },
 
   backToLobby() {
     clearTimeout(botTimer);
     generation++;
-    set({ screen: 'lobby', game: null, shown: null, queue: [], busy: false, flyers: {}, popups: [], bursts: [], dealing: false });
+    if (get().mode === 'online') void import('../net/online').then(({ online }) => online.leave());
+    set({ screen: 'lobby', mode: 'local', game: null, shown: null, table: null, legal: [], queue: [], busy: false, flyers: {}, popups: [], bursts: [], dealing: false });
   },
 
   send(cmd) {
+    if (get().mode === 'online') {
+      // The server applies it and sends the result back to everyone.
+      set({ targeting: null, legal: [] });
+      void import('../net/online').then(({ online }) => online.send(cmd));
+      return;
+    }
     const { game } = get();
     if (!game || game.phase === 'over') return;
     const actor = game.players[game.current]!.id;
     const { state, events } = apply(game, actor, cmd);
     set((s) => ({
       game: state,
+      legal: legalCommands(state, LOCAL_ID),
       stats: tally(s.stats, events),
       targeting: null,
       queue: [...s.queue, { events: eventsFor(events, LOCAL_ID), view: viewFor(state, LOCAL_ID) }],
     }));
     void pump();
+  },
+
+  onLobby(info) {
+    set((s) => ({ table: info, mode: 'online', screen: s.screen === 'lobby' && !info.started ? 'room' : s.screen }));
+  },
+
+  onOnlineStart(view, legal) {
+    clearTimeout(botTimer);
+    set({ ...openingState(view), mode: 'online', game: null, legal });
+    setTimeout(() => void pump(), 350);
+  },
+
+  onOnlineUpdate(events, view, legal) {
+    set((s) => ({ legal, stats: tally(s.stats, events), queue: [...s.queue, { events, view }] }));
+    void pump();
+  },
+
+  onOnlineResume(view, legal) {
+    // Back after a reload or a dropped connection: show the table as it is now, no replay.
+    generation++;
+    set({ mode: 'online', screen: 'game', shown: view, legal, queue: [], busy: false, flyers: {}, ov: noOverrides(), dealing: false, focus: view.current });
   },
 
   setTargeting(t) {
@@ -295,7 +339,8 @@ async function pump() {
 /** Bots act on their own turn after a short "thinking" pause. */
 function scheduleBot() {
   clearTimeout(botTimer);
-  const { game, busy, queue, speed } = useGame.getState();
+  const { game, busy, queue, speed, mode } = useGame.getState();
+  if (mode === 'online') return;
   if (!game || busy || queue.length || game.phase === 'over') return;
   const me = game.players[game.current]!;
   if (me.id === LOCAL_ID && !AUTOPLAY) return;

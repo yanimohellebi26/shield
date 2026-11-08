@@ -262,7 +262,7 @@ export async function animateEvent(e: UiEvent): Promise<void> {
         }),
       );
       await wait(250);
-      useGame.setState({ focus: get().game?.players[get().game!.current]?.id ?? null });
+      useGame.setState({ focus: e.view.current });
       return;
     }
 
@@ -474,14 +474,12 @@ export async function animateEvent(e: UiEvent): Promise<void> {
         t('pop.vs', { atk: e.attack, shield: e.shield.rank }),
       );
       log(
-        tYou(e.damage > 0 ? 'log.hit' : 'log.block', you(e.player), {
-          name: nm(e.player),
-          target: tgtName(e.target),
-          atk: e.attack,
-          shield: e.shield.rank,
-          dmg: e.damage,
-          hp: e.hpAfter,
-        }),
+        (() => {
+          const params = { name: nm(e.player), target: tgtName(e.target), atk: e.attack, shield: e.shield.rank, dmg: e.damage, hp: e.hpAfter };
+          const ko = e.hpAfter <= 0;
+          if (e.target === LOCAL_ID) return t(e.damage === 0 ? 'log.blockOnYou' : ko ? 'log.hitKoOnYou' : 'log.hitOnYou', params);
+          return tYou(e.damage === 0 ? 'log.block' : ko ? 'log.hitKo' : 'log.hit', you(e.player), params);
+        })(),
         e.damage > 0 ? 'hit' : 'block',
       );
       await wait(650);

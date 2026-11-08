@@ -7,10 +7,12 @@ Rules of the game: `SHIELD_REGLES.md` (section 14 = decisions in force). Plan: `
 
 ```bash
 npm run dev        # http://localhost:5173 (Vite)
-npm test           # rules engine (Vitest + fast-check)
+npm run server     # online game server, ws://localhost:2567 (Colyseus)
+npm test           # rules engine + server integration tests
+npm run balance -w @shield/engine   # balance simulations (docs/EQUILIBRAGE.md)
 npm run typecheck
 npm run build
-npm run e2e        # Playwright: no-stall robustness (desktop, 4× slower CPU, phone) + render budget
+npm run e2e        # Playwright: no-stall robustness, render budget, two-browser online game with reload
 ```
 
 Dev URL switches: `?autoplay` (local seat plays itself), `?speed=3`, `?off=bloom,bursts,shadows`. In dev, the store is on `window.__shield`, frame stats on `window.__perf`.
@@ -22,6 +24,7 @@ packages/engine/        Pure TypeScript rules. No React/Three/DOM/network. Deter
   src/engine.ts         createGame, legalCommands, apply(state, player, command) -> { state, events }
   src/view.ts           viewFor(state, viewer): what one player may know (hidden shield/charge redacted)
   src/bot.ts            computer opponent — sees only the public view
+apps/server/            Colyseus 0.18 server (pinned versions). src/ShieldRoom.ts = one table.
 apps/web/
   index.html            Google Fonts link (Alegreya SC, Alegreya Sans)
   public/cards/*.svg    52 card faces (Kennard CC0 deck, recoloured by tools/import-cards.mjs)
@@ -36,6 +39,12 @@ tools/import-cards.mjs  Re-imports and recolours the card SVGs
 ```
 
 Flow: UI action → `store.send(cmd)` → engine `apply` → events queued → `director.animateEvent` plays each → view committed.
+
+Online (`store.mode === 'online'`): `store.send` forwards to `net/online.ts` → server `ShieldRoom` applies the command with
+the same engine and sends each player `{ events, view, legal }`, already localised (their own id is `'you'`), into the same
+queue. The server is authoritative: never trust or compute game state on the client; secret cards never leave the server.
+Server pacing waits for the client animations (`animationMs`); bots and absent players are played by `chooseBotCommand`.
+The UI reads allowed moves from `store.legal` (engine locally, server online), never from `game` directly.
 **Never put game rules in the UI.** UI asks the engine (`legalCommands`) what is allowed.
 
 ## Design system

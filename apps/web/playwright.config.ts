@@ -16,5 +16,8 @@ export default defineConfig({
     viewport: { width: 1600, height: 900 },
     launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] },
   },
-  webServer: { command: 'npm run dev', url: 'http://localhost:5173', reuseExistingServer: true, timeout: 60_000 },
+  webServer: [
+    { command: 'npm run dev', url: 'http://localhost:5173', reuseExistingServer: true, timeout: 60_000 },
+    { command: 'npm run start -w @shield/server', cwd: '../..', port: 2567, reuseExistingServer: true, timeout: 60_000 },
+  ],
 });

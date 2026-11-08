@@ -8,9 +8,10 @@
   "scripts": {
     "dev": "npm run dev -w @shield/web",
     "build": "npm run build -w @shield/web",
-    "test": "npm test -w @shield/engine",
+    "test": "npm test -w @shield/engine && npm test -w @shield/server",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "e2e": "npm run e2e -w @shield/web"
+    "e2e": "npm run e2e -w @shield/web",
+    "server": "npm run dev -w @shield/server"
   },
   "devDependencies": {
     "playwright": "^1.65.0"

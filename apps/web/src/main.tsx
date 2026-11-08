@@ -6,7 +6,8 @@ import { setPortrait } from './game/layout';
 import { useGame } from './game/store';
 import { Scene } from './three/Scene';
 import { preloadCardArt } from './three/textures';
-import { Hud, Lobby } from './ui/Hud';
+import { Hud, Lobby, WaitingRoom } from './ui/Hud';
+import { online } from './net/online';
 import { Overlay } from './ui/Overlay';
 import './styles.css';
 import { getLang } from './ui/i18n';
@@ -17,6 +18,8 @@ import { t } from './ui/i18n';
 gsap.ticker.lagSmoothing(0);
 
 document.documentElement.lang = getLang();
+// A reloaded tab goes back to the online table it was sitting at.
+void online.resume();
 // Browsers start audio only after a user gesture.
 for (const ev of ['pointerdown', 'keydown'] as const) window.addEventListener(ev, unlockAudio, { passive: true });
 
@@ -64,6 +67,7 @@ function App() {
     return () => window.removeEventListener('resize', update);
   }, []);
   if (!fontsReady) return <Loading />;
+  if (screen === 'room') return <WaitingRoom />;
   return screen === 'lobby' ? (
     <Lobby />
   ) : (

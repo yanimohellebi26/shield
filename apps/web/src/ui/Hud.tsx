@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { cardLabel, legalCommands, MAX_PLAYERS, MIN_PLAYERS, type Card, type Command } from '@shield/engine';
+import { cardLabel, MAX_PLAYERS, MIN_PLAYERS, type Card, type Command } from '@shield/engine';
+import { online } from '../net/online';
 import { seatLayouts } from '../game/layout';
 import { LOCAL_ID, useGame } from '../game/store';
 import { cardUrl } from '../three/textures';
@@ -29,10 +30,7 @@ function LangSwitch() {
   );
 }
 
-export function Lobby() {
-  useLang();
-  const start = useGame((s) => s.start);
-  const [count, setCount] = useState(6);
+function useRememberedName(): [string, (n: string) => void] {
   const [name, setName] = useState(() => {
     try {
       return localStorage.getItem('shield.name') ?? '';
@@ -40,72 +38,187 @@ export function Lobby() {
       return '';
     }
   });
-  const [rules, setRules] = useState(false);
-  const go = () => {
+  const save = (n: string) => {
+    setName(n);
     try {
-      localStorage.setItem('shield.name', name);
+      localStorage.setItem('shield.name', n);
     } catch {
       // Name not remembered; nothing else depends on it.
     }
-    start(count, name);
   };
+  return [name, save];
+}
+
+function SeatPicker({ count, onChange, disabledBelow = MIN_PLAYERS }: { count: number; onChange: (n: number) => void; disabledBelow?: number }) {
+  return (
+    <div className="count-row" role="radiogroup" aria-label={t('lobby.players')}>
+      {Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, i) => i + MIN_PLAYERS).map((n) => (
+        <button key={n} role="radio" aria-checked={n === count} disabled={n < disabledBelow} className={`count ${n === count ? 'on' : ''}`} onClick={() => onChange(n)}>
+          {n}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Fan() {
+  return (
+    <div className="lobby-fan" aria-hidden>
+      {FAN.map((c, i) => (
+        <img
+          key={c.id}
+          src={cardUrl(c)}
+          alt=""
+          style={
+            {
+              transform: `translateX(-50%) rotate(${(i - 1.5) * 13}deg)`,
+              '--fan-hover': `translateX(-50%) rotate(${(i - 1.5) * 19}deg) translateY(-6px)`,
+            } as React.CSSProperties
+          }
+        />
+      ))}
+    </div>
+  );
+}
+
+export function Lobby() {
+  useLang();
+  const start = useGame((s) => s.start);
+  const netStatus = useGame((s) => s.netStatus);
+  const netError = useGame((s) => s.netError);
+  const [mode, setMode] = useState<'local' | 'online'>('local');
+  const [count, setCount] = useState(6);
+  const [name, setName] = useRememberedName();
+  const [code, setCode] = useState('');
+  const [rules, setRules] = useState(false);
+  const busy = netStatus === 'connecting';
+
+  const createOnline = () => void online.create(name, count).catch(() => undefined);
+  const joinOnline = () => code.trim().length === 5 && void online.join(code, name).catch(() => undefined);
+
   return (
     <div className="lobby">
       <LangSwitch />
       <div className="lobby-card">
-        <div className="lobby-fan" aria-hidden>
-          {FAN.map((c, i) => {
-            const a = (i - 1.5) * 13;
-            const ah = (i - 1.5) * 19;
-            return (
-              <img
-                key={c.id}
-                src={cardUrl(c)}
-                alt=""
-                style={
-                  {
-                    transform: `translateX(-50%) rotate(${a}deg)`,
-                    '--fan-hover': `translateX(-50%) rotate(${ah}deg) translateY(-6px)`,
-                  } as React.CSSProperties
-                }
-              />
-            );
-          })}
-        </div>
+        <Fan />
         <div className="logo">SHIELD</div>
         <p className="tagline">{t('app.tagline')}</p>
+        <div className="segmented tabs" role="tablist">
+          <button role="tab" aria-selected={mode === 'local'} className={mode === 'local' ? 'on' : ''} onClick={() => setMode('local')}>
+            {t('lobby.tabLocal')}
+          </button>
+          <button role="tab" aria-selected={mode === 'online'} className={mode === 'online' ? 'on' : ''} onClick={() => setMode('online')}>
+            {t('lobby.tabOnline')}
+          </button>
+        </div>
         <label className="field">
           <span>{t('lobby.name')}</span>
-          <input value={name} maxLength={16} placeholder={t('lobby.namePlaceholder')} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && go()} />
+          <input value={name} maxLength={16} placeholder={t('lobby.namePlaceholder')} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && mode === 'local' && start(count, name)} />
         </label>
         <div className="field">
           <span>{t('lobby.players')}</span>
-          <div className="count-row" role="radiogroup" aria-label={t('lobby.players')}>
-            {Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, i) => i + MIN_PLAYERS).map((n) => (
-              <button key={n} role="radio" aria-checked={n === count} className={`count ${n === count ? 'on' : ''}`} onClick={() => setCount(n)}>
-                {n}
-              </button>
-            ))}
-          </div>
-          <div className="seat-dots" aria-hidden>
-            {Array.from({ length: count }, (_, i) => (
-              <i key={i} className={i === 0 ? 'you' : 'bot'} />
-            ))}
-          </div>
+          <SeatPicker count={count} onChange={setCount} />
           <div className="field-note">
             <IconPlayers />
-            {t('lobby.seats', { n: count, bots: count - 1 })}
+            {mode === 'local' ? t('lobby.seats', { n: count, bots: count - 1 }) : t('lobby.seatsOnline', { n: count })}
           </div>
         </div>
-        <button className="primary big" onClick={go} autoFocus>
-          {t('lobby.start')}
-        </button>
+        {mode === 'local' ? (
+          <button className="primary big" onClick={() => start(count, name)} autoFocus>
+            {t('lobby.start')}
+          </button>
+        ) : (
+          <>
+            <button className="primary big" onClick={createOnline} disabled={busy}>
+              {busy ? t('net.connecting') : t('lobby.create')}
+            </button>
+            <div className="join-row">
+              <input
+                className="code-input"
+                value={code}
+                maxLength={5}
+                placeholder={t('lobby.codePlaceholder')}
+                aria-label={t('lobby.code')}
+                onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z]/g, ''))}
+                onKeyDown={(e) => e.key === 'Enter' && joinOnline()}
+              />
+              <button className="ghost" onClick={joinOnline} disabled={busy || code.length !== 5}>
+                {t('lobby.join')}
+              </button>
+            </div>
+            {netStatus === 'error' && <div className="net-error">{t('net.error', { detail: netError ?? '' })}</div>}
+          </>
+        )}
         <button className="ghost" onClick={() => setRules(true)}>
           <IconRules />
           {t('lobby.rules')}
         </button>
       </div>
       {rules && <RulesModal onClose={() => setRules(false)} />}
+    </div>
+  );
+}
+
+/** Waiting room of an online table: the code to share, who is here, the host starts. */
+export function WaitingRoom() {
+  useLang();
+  const table = useGame((s) => s.table);
+  const back = useGame((s) => s.backToLobby);
+  const [copied, setCopied] = useState(false);
+  if (!table) return null;
+  const humans = table.players.length;
+  const copy = () => {
+    void navigator.clipboard?.writeText(table.code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <div className="lobby">
+      <div className="lobby-card room-card">
+        <div className="room-title">{t('room.title')}</div>
+        <div className="room-code-label">{t('room.share')}</div>
+        <button className="room-code" onClick={copy} title={t('room.copy')}>
+          {table.code}
+          <small>{copied ? t('room.copied') : t('room.copy')}</small>
+        </button>
+        <ul className="room-players">
+          {table.players.map((p, i) => (
+            <li key={i} className={`${p.you ? 'you' : ''} ${p.connected ? '' : 'away'}`}>
+              {p.host ? <IconWinner /> : <IconPlayers />}
+              <span>{p.name}</span>
+              {p.you && <small>{t('room.you')}</small>}
+              {!p.connected && <small>{t('room.away')}</small>}
+            </li>
+          ))}
+          {Array.from({ length: Math.max(0, table.seats - humans) }, (_, i) => (
+            <li key={`bot${i}`} className="bot">
+              <IconWait />
+              <span>{t('room.botSeat')}</span>
+            </li>
+          ))}
+        </ul>
+        {table.isHost ? (
+          <>
+            <div className="field">
+              <span>{t('lobby.players')}</span>
+              <SeatPicker count={table.seats} onChange={(n) => online.setSeats(n)} disabledBelow={Math.max(MIN_PLAYERS, humans)} />
+            </div>
+            <button className="primary big" onClick={() => online.start()}>
+              {t('room.start')}
+            </button>
+          </>
+        ) : (
+          <div className="field-note">
+            <IconWait />
+            {t('room.waitHost')}
+          </div>
+        )}
+        <button className="ghost" onClick={back}>
+          <IconLeave />
+          {t('room.leave')}
+        </button>
+      </div>
     </div>
   );
 }
@@ -127,7 +240,6 @@ export function useTargetNumbers(): Map<string, number> {
 
 function ActionBar() {
   useLang();
-  const game = useGame((s) => s.game);
   const shown = useGame((s) => s.shown);
   const busy = useGame((s) => s.busy);
   const queued = useGame((s) => s.queue.length);
@@ -137,7 +249,7 @@ function ActionBar() {
   const pickTarget = useGame((s) => s.pickTarget);
   const numbers = useTargetNumbers();
 
-  const legal = useMemo(() => (game ? legalCommands(game, LOCAL_ID) : []), [game]);
+  const legal = useGame((s) => s.legal);
   const myTurn = !!shown && shown.current === LOCAL_ID && !busy && queued === 0 && legal.length > 0 && shown.phase === 'action';
   const has = (pred: (c: Command) => boolean) => legal.some(pred);
   const act = (type: string) => has((c) => c.type === 'act' && c.action.type === type);
@@ -164,7 +276,7 @@ function ActionBar() {
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  if (!game || !shown || shown.phase === 'over') return null;
+  if (!shown || shown.phase === 'over') return null;
   const me = shown.players.find((p) => p.id === LOCAL_ID)!;
   if (me.eliminated) return <div className="action-bar waiting">{t('hint.out')}</div>;
   if (!myTurn) {
@@ -269,6 +381,8 @@ function Log({ open }: { open: boolean }) {
 
 function GameOver() {
   useLang();
+  const mode = useGame((s) => s.mode);
+  const table = useGame((s) => s.table);
   const shown = useGame((s) => s.shown);
   const busy = useGame((s) => s.busy);
   const stats = useGame((s) => s.stats);
@@ -305,9 +419,20 @@ function GameOver() {
         </ol>
         {stats.biggest && stats.biggest.n > 0 && <div className="over-note">{t('over.biggest', { n: stats.biggest.n, name: biggestBy ?? '' })}</div>}
         <div className="offer-buttons">
-          <button className="primary" onClick={() => start(shown.players.length, me.name)} autoFocus>
-            {t('over.again')}
-          </button>
+          {mode === 'local' ? (
+            <button className="primary" onClick={() => start(shown.players.length, me.name)} autoFocus>
+              {t('over.again')}
+            </button>
+          ) : table?.isHost ? (
+            <button className="primary" onClick={() => online.rematch()} autoFocus>
+              {t('over.again')}
+            </button>
+          ) : (
+            <span className="field-note">
+              <IconWait />
+              {t('room.waitHost')}
+            </span>
+          )}
           <button className="ghost" onClick={back}>
             {t('over.change')}
           </button>
@@ -339,6 +464,7 @@ export function Hud() {
   const [modal, setModal] = useState<null | 'rules' | 'settings'>(null);
   const [logOpen, setLogOpen] = useState(() => window.innerWidth > 760);
   const sound = useSoundPrefs();
+  const netStatus = useGame((s) => s.netStatus);
   if (!shown) return null;
   const current = shown.players.find((p) => p.id === shown.current);
   const mine = shown.current === LOCAL_ID && shown.phase !== 'over';
@@ -370,6 +496,7 @@ export function Hud() {
         </div>
       </div>
       <TurnBanner />
+      {netStatus === 'reconnecting' && <div className="net-banner">{t('net.reconnecting')}</div>}
       <Log open={logOpen} />
       <ActionBar />
       <LifeOffer />

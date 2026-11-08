@@ -7,6 +7,7 @@ Web adaptation of the SHIELD card-combat game (2–8 players). Rules: `SHIELD_RE
 ```bash
 npm install
 npm run dev        # http://localhost:5173
+npm run server     # game server for online tables, ws://localhost:2567
 npm test           # rules engine tests
 npm run typecheck
 npm run build
@@ -18,6 +19,7 @@ Dev URL switches: `?autoplay` (your seat plays itself), `?speed=3`, `?off=bloom,
 ## Layout
 
 - `packages/engine` — pure TypeScript rules: setup, legal commands, actions, hidden-information views, bot. No UI/network code.
+- `apps/server` — Colyseus game server: online tables (5-letter codes, 2–8 seats, bots fill empty seats), authoritative engine, per-player views, reconnection.
 - `apps/web` — React + Vite + React Three Fiber table.
   - `src/game/store.ts` — local game loop (you vs bots), event queue.
   - `src/game/director.ts` — turns engine events into card animations, popups and effects.

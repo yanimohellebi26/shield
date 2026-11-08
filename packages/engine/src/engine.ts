@@ -1,6 +1,6 @@
 import { fullDeck, LIFE_SWAP_THRESHOLD, MAX_PLAYERS, MIN_PLAYERS, sum, value } from './cards';
 import { nextRandom, shuffle } from './rng';
-import { RuleError, type Action, type Card, type Command, type GameEvent, type GameState, type Player } from './types';
+import { DEFAULT_RULES, RuleError, type Action, type Card, type Command, type GameEvent, type GameState, type Player, type RuleOptions } from './types';
 
 export interface NewGameOptions {
   players: { id: string; name: string }[];
@@ -9,6 +9,12 @@ export interface NewGameOptions {
   deckTopFirst?: Card[];
   /** Index of the first player. Defaults to a seeded random choice. */
   first?: number;
+  /** Rule variants (balance testing). Omitted options keep the standard rules. */
+  rules?: Partial<RuleOptions>;
+}
+
+export function rulesOf(state: GameState): RuleOptions {
+  return { ...DEFAULT_RULES, ...state.rules };
 }
 
 export interface ApplyResult {
@@ -58,7 +64,11 @@ export function createGame(opts: NewGameOptions): GameState {
     first = Math.floor(r * n);
   }
 
-  return { players, deck, discard: [], current: first, phase: 'action', turn: 1, lifeOffer: null, winner: null, rng, seq: 0 };
+  if (opts.rules?.secondPlayerCharge && n === 2) players[(first + 1) % n]!.charge.push(take());
+  if (opts.rules?.secondPlayerHp && n === 2) players[(first + 1) % n]!.hp += opts.rules.secondPlayerHp;
+  const state: GameState = { players, deck, discard: [], current: first, phase: 'action', turn: 1, lifeOffer: null, winner: null, rng, seq: 0 };
+  if (opts.rules) state.rules = { ...opts.rules };
+  return state;
 }
 
 export function currentPlayer(state: GameState): Player {
@@ -90,9 +100,11 @@ export function legalCommands(state: GameState, playerId: string): Command[] {
   if (canDraw && !me.lifeSwapUsed && me.hp < LIFE_SWAP_THRESHOLD) cmds.push({ type: 'lifeSwap' });
 
   const act = (action: Action) => cmds.push({ type: 'act', action });
+  const rules = rulesOf(state);
+  const mayAttack = !(rules.noAttackFirstTurn && state.turn === 1);
   if (canDraw) {
-    for (const o of opponents) act({ type: 'attack', target: o.id });
-    act({ type: 'charge' });
+    if (mayAttack) for (const o of opponents) act({ type: 'attack', target: o.id });
+    if (me.charge.length < rules.maxCharge) act({ type: 'charge' });
     act({ type: 'shieldSelf' });
     for (const o of opponents) act({ type: 'shieldOther', target: o.id });
   } else if (me.charge.length > 0) {
@@ -239,10 +251,10 @@ function resolveAction(state: GameState, me: Player, action: Action, events: Gam
       });
       if (target.hp <= 0) {
         eliminate(state, target, events);
-      } else if (damage > 0 && target.charge.length > 0) {
+      } else if (damage > 0 && target.charge.length > 0 && rulesOf(state).chargeLoss !== 'never') {
         // A hit that gets through threatens the target's charge: an attack strictly greater
         // than the charge breaks it. The comparison is secret when the charge holds.
-        if (attack > sum(target.charge)) {
+        if (rulesOf(state).chargeLoss === 'anyDamage' || attack > sum(target.charge)) {
           const cards = target.charge;
           target.charge = [];
           state.discard.push(...cards);

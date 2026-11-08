@@ -25,6 +25,27 @@ export interface Player {
 
 export type Phase = 'action' | 'lifeOffer' | 'over';
 
+/**
+ * Optional rule variants, used to test balance. The defaults are the rules in SHIELD_REGLES.md.
+ */
+export interface RuleOptions {
+  /** Most cards a charge may hold (default: no limit). */
+  maxCharge: number;
+  /**
+   * When a hit threatens the target's charge:
+   * 'beats' (default) — damage > 0 and attack > charge; 'anyDamage' — any damaging hit; 'never'.
+   */
+  chargeLoss: 'beats' | 'anyDamage' | 'never';
+  /** The very first turn of the game cannot be an attack (evens out the first-player edge). */
+  noAttackFirstTurn: boolean;
+  /** In a 2-player game, the second player starts with one card already charged (hidden). */
+  secondPlayerCharge: boolean;
+  /** In a 2-player game, extra starting HP for the second player. */
+  secondPlayerHp: number;
+}
+
+export const DEFAULT_RULES: RuleOptions = { maxCharge: Infinity, chargeLoss: 'beats', noAttackFirstTurn: false, secondPlayerCharge: false, secondPlayerHp: 0 };
+
 export interface GameState {
   players: Player[];
   /** Draw pile; the top card is the last element. */
@@ -42,6 +63,8 @@ export interface GameState {
   rng: number;
   /** Number of commands applied so far. */
   seq: number;
+  /** Rule variants in force; absent means the standard rules. */
+  rules?: Partial<RuleOptions>;
 }
 
 export type Action =

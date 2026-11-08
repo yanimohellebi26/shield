@@ -186,6 +186,25 @@ describe('charge under attack', () => {
   });
 });
 
+describe('rule variants (balance testing)', () => {
+  it('maxCharge removes the charge action once the pile is full', () => {
+    const s = { ...game([{ charge: [3, 4] }, {}], [5]), rules: { maxCharge: 2 } };
+    expect(legalCommands(s, 'p0')).not.toContainEqual(charge);
+  });
+
+  it("chargeLoss 'anyDamage' breaks the charge on any hit that gets through", () => {
+    const s = { ...game([{}, { shield: 2, charge: [10, 10] }], [5]), rules: { chargeLoss: 'anyDamage' as const } };
+    expect(apply(s, 'p0', attack('p1')).state.players[1]!.charge).toHaveLength(0);
+  });
+
+  it('noAttackFirstTurn forbids attacking on turn 1 only', () => {
+    const s = { ...game([{}, {}], [5, 5, 5]), rules: { noAttackFirstTurn: true } };
+    expect(legalCommands(s, 'p0').some((c) => c.type === 'act' && c.action.type === 'attack')).toBe(false);
+    const next = apply(s, 'p0', charge).state;
+    expect(legalCommands(next, 'p1').some((c) => c.type === 'act' && c.action.type === 'attack')).toBe(true);
+  });
+});
+
 describe('life replacement', () => {
   it('at 2–4 HP is blind and binding, even if worse', () => {
     const s = game([{ hp: 4 }, {}], [2]);

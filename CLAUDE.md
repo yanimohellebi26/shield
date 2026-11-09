@@ -50,7 +50,7 @@ The UI reads allowed moves from `store.legal` (engine locally, server online), n
 ## Deployment
 
 - Web client: Vercel project `shield-game` (team `yani-mohellebis-projects`), https://shield-game-five.vercel.app. Builds from `master` on every push (`vercel.json`). Env `VITE_SERVER_URL=wss://shield-server-j0kv.onrender.com`.
-- Game server: Render web service `shield-server` (free plan, Frankfurt), https://shield-server-j0kv.onrender.com. Deploys from `master` on every push (`render.yaml`). The free plan sleeps after 15 min idle; first connection then takes ~50 s.
+- Game server: Render web service `shield-server` (free plan, Frankfurt), https://shield-server-j0kv.onrender.com. Deploys from `master` on every push (`render.yaml`). The free plan sleeps after 15 min idle; first connection then takes ~50 s. `.github/workflows/keep-awake.yml` pings it so it never sleeps (one always-on service fits the 750 free hours/month).
 - Check the live site: `cd apps/web && npx playwright test -c playwright.live.config.ts online`.
 
 ## Design system

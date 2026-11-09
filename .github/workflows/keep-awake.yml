@@ -1,0 +1,22 @@
+# Keeps the free Render game server awake (it sleeps after 15 min without traffic).
+# Runs every 10 min and pings every 4 min for 20 min, so runs overlap and GitHub's
+# cron delays never leave a 15-minute gap.
+name: Keep game server awake
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Ping shield-server
+        run: |
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s -o /dev/null -m 90 -w '%{http_code}' https://shield-server-j0kv.onrender.com/ || true)
+            echo "$(date -u +%H:%M:%S) $code"
+            [ "$i" -lt 6 ] && sleep 240
+          done

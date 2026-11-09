@@ -1,5 +1,6 @@
 import { Room, type Client } from '@colyseus/core';
 import {
+  actorOf,
   apply,
   chooseBotCommand,
   createGame,
@@ -7,20 +8,27 @@ import {
   legalCommands,
   MAX_PLAYERS,
   MIN_PLAYERS,
+  newRecord,
   RuleError,
   viewFor,
   type Command,
   type GameEvent,
+  type GameRecord,
   type GameState,
 } from '@shield/engine';
+import { saveRecord } from './records';
 
 /**
  * One SHIELD table. The server is authoritative: it holds the full game state, validates every
  * command with the rules engine, and sends each player only their own view (secret shields and
  * charges never leave the server).
  *
- * Messages to clients:  'lobby' (table setup), 'start' / 'update' / 'resume' (game), 'error'.
- * Messages from clients: 'seats' and 'start' and 'rematch' (host only), 'cmd' (a game command).
+ * Messages to clients:  'lobby' (table setup), 'start' / 'update' / 'resume' (game), 'chat', 'error'.
+ * Messages from clients: 'seats' and 'start' and 'rematch' (host only), 'cmd' (a game command),
+ * 'chat' (a short message or a reaction).
+ *
+ * People may join a table in progress: they wait (and can chat) until the game ends, then take
+ * part in the next one, even if that means more seats than the host chose (up to 8).
  *
  * Every payload is localised for its recipient: their own player id is replaced by 'you', so the
  * client renders an online table exactly like a local one.
@@ -39,16 +47,34 @@ interface Human {
   connected: boolean;
   /** When the connection dropped (for the log). */
   droppedAt?: number;
-  /** Engine player id once the game has started. */
+  /** Engine player id in the current game; absent while waiting for the next game. */
   playerId?: string;
+  /** Last chat message time (rate limit). */
+  chatAt?: number;
+  /** Secret kept by the browser so the same person can take their seat back after a long absence. */
+  key?: string;
 }
+
+const REACTIONS = ['bravo', 'ouch', 'gg', 'laugh', 'think', 'hurry'] as const;
+const CHAT_MAX = 140;
+const CHAT_GAP_MS = 800;
 
 export interface LobbyMessage {
   code: string;
   seats: number;
   started: boolean;
   isHost: boolean;
-  players: { name: string; you: boolean; host: boolean; connected: boolean }[];
+  /** You joined during a game and will play in the next one. */
+  waiting: boolean;
+  players: { name: string; you: boolean; host: boolean; connected: boolean; waiting: boolean }[];
+}
+
+export interface ChatMessage {
+  from: string;
+  you: boolean;
+  text?: string;
+  reaction?: (typeof REACTIONS)[number];
+  at: number;
 }
 
 /** Rough duration of the client-side animation for a batch of events (1× speed). */
@@ -86,7 +112,7 @@ function animationMs(events: GameEvent[]): number {
   return ms;
 }
 
-const LOCAL_KEYS = new Set(['id', 'viewer', 'current', 'player', 'target', 'winner']);
+const LOCAL_KEYS = new Set(['id', 'viewer', 'current', 'player', 'target', 'winner', 'lifeOfferTo']);
 
 /** Replaces the recipient's own player id by 'you' in id-carrying fields. */
 export function localize<T>(value: T, playerId: string): T {
@@ -127,6 +153,8 @@ export class ShieldRoom extends Room {
   private humans: Human[] = [];
   private seats = 4;
   private game: GameState | null = null;
+  private record: GameRecord | null = null;
+  private startedAt = 0;
   private timer: ReturnType<typeof setTimeout> | undefined;
 
   onCreate(options: { seats?: number }) {
@@ -146,15 +174,32 @@ export class ShieldRoom extends Room {
       if (this.isHost(client) && this.game?.phase === 'over') this.startGame();
     });
     this.onMessage('cmd', (client, cmd: unknown) => this.onCommand(client, cmd));
+    this.onMessage('chat', (client, msg: unknown) => this.onChat(client, msg));
   }
 
-  onJoin(client: Client, options: { name?: string }) {
-    if (this.game) throw new Error('This table has already started.');
+  onJoin(client: Client, options: { name?: string; key?: string }) {
+    const key = typeof options?.key === 'string' && options.key.length >= 8 ? options.key.slice(0, 64) : undefined;
+    // Coming back with the same seat key (phone woke up, tab reopened): give the seat back.
+    const back = key ? this.humans.find((h) => h.key === key) : undefined;
+    if (back) {
+      const wasAbsent = !back.connected;
+      back.sessionId = client.sessionId;
+      back.connected = true;
+      this.log(`rejoin ${back.name}${wasAbsent ? '' : ' (replaces an open session)'}`);
+      this.sendLobby();
+      if (this.game && back.playerId) client.send('resume', this.payloadFor(back.playerId, []));
+      if (this.game && this.actingHuman() === back) this.scheduleNext();
+      return;
+    }
+    if (this.present().length >= MAX_PLAYERS) throw new Error('This table is full.');
     const name = String(options?.name ?? '').trim().slice(0, 16) || `Joueur ${this.humans.length + 1}`;
-    this.humans.push({ sessionId: client.sessionId, name, connected: true });
-    if (this.humans.length > this.seats) this.seats = this.humans.length;
-    if (this.humans.length >= MAX_PLAYERS) void this.lock();
+    this.humans.push({ sessionId: client.sessionId, name, connected: true, key });
+    // Before a game the table grows with its guests; during one, newcomers wait for the next.
+    if (!this.game && this.humans.length > this.seats) this.seats = this.humans.length;
+    if (this.present().length >= MAX_PLAYERS) void this.lock();
+    this.log(`join ${name}${this.game && this.game.phase !== 'over' ? ' (waits for the next game)' : ''}`);
     this.sendLobby();
+    // Someone arriving after the end sees the final table until the rematch.
   }
 
   async onDrop(client: Client, code?: number) {
@@ -164,7 +209,7 @@ export class ShieldRoom extends Room {
     h.droppedAt = Date.now();
     this.log(`drop ${h.name} code=${code ?? '?'}`);
     this.sendLobby();
-    if (this.game && this.currentHuman() === h) this.scheduleNext(ABSENT_TURN_MS);
+    if (this.game && this.actingHuman() === h) this.scheduleNext(ABSENT_TURN_MS);
     try {
       await this.allowReconnection(client, RECONNECT_SECONDS);
     } catch {
@@ -179,43 +224,57 @@ export class ShieldRoom extends Room {
     this.log(`reconnect ${h.name} after ${h.droppedAt ? ((Date.now() - h.droppedAt) / 1000).toFixed(1) : '?'}s`);
     this.sendLobby();
     if (this.game && h.playerId) client.send('resume', this.payloadFor(h.playerId, []));
-    if (this.game && this.currentHuman() === h) this.scheduleNext();
+    if (this.game && this.actingHuman() === h) this.scheduleNext();
   }
 
   onLeave(client: Client, code?: number) {
     const h = this.human(client.sessionId);
     if (!h) return;
     this.log(`leave ${h.name} code=${code ?? '?'}`);
-    if (!this.game) {
-      // Before the game: free the seat. The next player becomes host.
+    if (!this.game || !h.playerId || this.game.phase === 'over') {
+      // Not in a running game: free the seat. The next player becomes host.
       this.humans = this.humans.filter((x) => x !== h);
-      void this.unlock();
+      if (this.present().length < MAX_PLAYERS) void this.unlock();
     } else {
       // During the game: the seat stays, played by a bot from now on.
       h.connected = false;
       h.sessionId = `left:${h.sessionId}`;
-      if (this.currentHuman() === h) this.scheduleNext(1500);
+      if (this.actingHuman() === h) this.scheduleNext(1500);
     }
     this.sendLobby();
   }
 
   onDispose() {
     clearTimeout(this.timer);
+    // A table closed mid-game is still worth keeping.
+    if (this.record && !this.record.finished && this.record.moves.some((m) => m.by === 'human')) {
+      this.record.endedAt = new Date().toISOString();
+      void saveRecord(this.record);
+    }
   }
 
   // ------------------------------------------------------------------ game flow
 
   private startGame() {
     clearTimeout(this.timer);
+    // People who left during the last game drop out; those waiting take a seat, even past the
+    // number the host chose.
+    this.humans = this.humans.filter((h) => !h.sessionId.startsWith('left:'));
+    for (const h of this.humans) h.playerId = undefined;
+    this.seats = this.clampSeats(Math.max(this.seats, this.humans.length));
     const bots = [...BOT_NAMES].sort(() => Math.random() - 0.5);
     const players = Array.from({ length: Math.max(this.seats, MIN_PLAYERS) }, (_, i) => {
       const id = `p${i}`;
       const h = this.humans[i];
       if (h) h.playerId = id;
-      return { id, name: h ? h.name : bots[i]! };
+      return { id, name: h ? h.name : bots[i]!, kind: h ? ('human' as const) : ('bot' as const) };
     });
-    this.game = createGame({ players, seed: (Math.random() * 2 ** 32) >>> 0 });
-    void this.lock();
+    const seed = (Math.random() * 2 ** 32) >>> 0;
+    this.game = createGame({ players, seed });
+    this.record = newRecord('online', this.game, seed, players);
+    this.startedAt = Date.now();
+    if (this.present().length >= MAX_PLAYERS) void this.lock();
+    else void this.unlock();
     for (const h of this.humans) {
       const c = this.client(h);
       if (c && h.playerId) c.send('start', this.payloadFor(h.playerId, []));
@@ -228,14 +287,27 @@ export class ShieldRoom extends Room {
   private onCommand(client: Client, raw: unknown) {
     const h = this.human(client.sessionId);
     if (!this.game || !h?.playerId || !isCommand(raw)) return;
-    if (this.game.players[this.game.current]!.id !== h.playerId) {
-      client.send('error', { message: 'not-your-turn' });
-      return;
-    }
-    this.play(h.playerId, delocalize(raw, h.playerId));
+    // The engine decides who may act now (life replacement is allowed on anyone's turn).
+    this.play(h.playerId, delocalize(raw, h.playerId), 'human');
   }
 
-  private play(playerId: string, cmd: Command) {
+  private onChat(client: Client, raw: unknown) {
+    const h = this.human(client.sessionId);
+    if (!h || !raw || typeof raw !== 'object') return;
+    const now = Date.now();
+    if (h.chatAt && now - h.chatAt < CHAT_GAP_MS) return;
+    const m = raw as { text?: unknown; reaction?: unknown };
+    const reaction = REACTIONS.find((r) => r === m.reaction);
+    const text = typeof m.text === 'string' ? m.text.replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX) : '';
+    if (!reaction && !text) return;
+    h.chatAt = now;
+    for (const x of this.humans) {
+      const c = this.client(x);
+      if (c) c.send('chat', { from: h.name, you: x === h, ...(reaction ? { reaction } : { text }), at: now } satisfies ChatMessage);
+    }
+  }
+
+  private play(playerId: string, cmd: Command, by: 'human' | 'bot' | 'auto') {
     if (!this.game) return;
     let events: GameEvent[];
     try {
@@ -249,10 +321,21 @@ export class ShieldRoom extends Room {
       }
       throw err;
     }
+    if (this.record) {
+      this.record.moves.push({ player: playerId, cmd, by, ms: Date.now() - this.startedAt });
+      if (this.game.phase === 'over') {
+        this.record.finished = true;
+        this.record.winner = this.game.winner;
+        this.record.endedAt = new Date().toISOString();
+        void saveRecord(this.record);
+        this.record = null;
+      }
+    }
     for (const h of this.humans) {
       const c = this.client(h);
       if (c && h.playerId) c.send('update', this.payloadFor(h.playerId, events));
     }
+    if (this.game.phase === 'over') this.sendLobby();
     this.scheduleNext(undefined, animationMs(events));
   }
 
@@ -264,14 +347,14 @@ export class ShieldRoom extends Room {
     clearTimeout(this.timer);
     const g = this.game;
     if (!g || g.phase === 'over') return;
-    const pid = g.players[g.current]!.id;
+    const pid = actorOf(g);
     const h = this.humans.find((x) => x.playerId === pid);
     const autoplay = !h || !h.connected;
     const delay = autoplay ? animation + (h ? Math.max(humanLimit ?? 0, ABSENT_TURN_MS) : 700) : animation + (humanLimit ?? TURN_LIMIT_MS);
     this.timer = setTimeout(() => {
       const now = this.game;
-      if (!now || now.phase === 'over' || now.players[now.current]!.id !== pid) return;
-      this.play(pid, chooseBotCommand(viewFor(now, pid), legalCommands(now, pid)));
+      if (!now || now.phase === 'over' || actorOf(now) !== pid) return;
+      this.play(pid, chooseBotCommand(viewFor(now, pid), legalCommands(now, pid)), h ? 'auto' : 'bot');
     }, delay * timeScale());
   }
 
@@ -298,7 +381,8 @@ export class ShieldRoom extends Room {
         seats: this.seats,
         started: !!this.game,
         isHost: h === host,
-        players: this.humans.map((x) => ({ name: x.name, you: x === h, host: x === host, connected: x.connected })),
+        waiting: this.isWaiting(h),
+        players: this.present().map((x) => ({ name: x.name, you: x === h, host: x === host, connected: x.connected, waiting: this.isWaiting(x) })),
       };
       c.send('lobby', msg);
     }
@@ -322,10 +406,22 @@ export class ShieldRoom extends Room {
     return h ? this.client(h) : undefined;
   }
 
-  private currentHuman() {
+  /** The human the game is waiting for right now, if any. */
+  private actingHuman() {
     const g = this.game;
     if (!g) return undefined;
-    return this.humans.find((h) => h.playerId === g.players[g.current]!.id);
+    const pid = actorOf(g);
+    return this.humans.find((h) => h.playerId === pid);
+  }
+
+  /** People still at the table (not those who left a running game). */
+  private present() {
+    return this.humans.filter((h) => !h.sessionId.startsWith('left:'));
+  }
+
+  /** Joined while a game was running: plays from the next game on. */
+  private isWaiting(h: Human) {
+    return !!this.game && !h.playerId;
   }
 
   private clampSeats(n: number) {

@@ -15,12 +15,12 @@ export interface Player {
   life: Card[];
   hp: number;
   /**
-   * Face down until attacked, then face up for everyone. While face down, nobody knows it,
-   * except the owner when they put it there themselves ("change my shield").
+   * Face down until attacked, then face up for everyone. While face down, the owner may look at
+   * it, except the shield dealt at the start of the game, which nobody knows.
    */
   shield: Card | null;
   shieldRevealed: boolean;
-  /** The owner drew this shield for themselves, so they may look at it. */
+  /** The owner may look at this shield (any shield except the starting one). */
   shieldSeenByOwner: boolean;
   /** Charged cards, face down and unknown to everyone until the next attack. */
   charge: Card[];
@@ -64,8 +64,10 @@ export interface GameState {
   current: number;
   phase: Phase;
   turn: number;
-  /** Card offered to the current player at exactly 1 HP (visible to them only). */
+  /** Card offered at exactly 1 HP (visible to the beneficiary only). */
   lifeOffer: Card | null;
+  /** Who the 1 HP offer is for. Life can be replaced on anyone's turn; absent means the current player. */
+  lifeOfferTo?: string | null;
   winner: string | null;
   /** Seeded RNG state, so a game is reproducible from its seed and commands. */
   rng: number;

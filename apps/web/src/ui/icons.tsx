@@ -6,6 +6,7 @@ import {
   GiBookmarklet,
   GiCancel,
   GiCardExchange,
+  GiChatBubble,
   GiCheckedShield,
   GiCog,
   GiCrossedSwords,
@@ -41,3 +42,4 @@ export const IconWait = GiHourglass;
 export const IconPlayers = GiTabletopPlayers;
 export const IconSound = GiSpeaker;
 export const IconMuted = GiSpeakerOff;
+export const IconChat = GiChatBubble;

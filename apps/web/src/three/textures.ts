@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { rankLabel, type Card } from '@shield/engine';
-import { ICON_PATHS } from '../ui/iconPaths';
 
 /**
  * Card art. Faces come from Adrian Kennard's CC0 deck (public/cards, see CREDITS.md),
@@ -257,33 +256,78 @@ export function backTexture(): THREE.CanvasTexture {
 const matCache = new Map<string, THREE.CanvasTexture>();
 
 /** Mats under each seat slot: a dashed outline and an icon, so life, shield and charge read without words. */
-export function matTexture(icon: keyof typeof ICON_PATHS, tint: string): THREE.CanvasTexture {
-  const key = icon + tint;
+/**
+ * A card place printed on the felt, like on a real playmat: a fine brass double frame with
+ * corner brackets, the felt slightly darker inside, and the slot's name in small caps.
+ * The role colour is only a small diamond next to the name, so the table stays calm.
+ */
+export function matTexture(label: string, tint: string): THREE.CanvasTexture {
+  const key = label + tint;
   const hit = matCache.get(key);
   if (hit) return hit;
+  const W = 512;
+  const H = 680;
   const c = document.createElement('canvas');
-  c.width = 256;
-  c.height = 340;
+  c.width = W;
+  c.height = H;
   const ctx = c.getContext('2d')!;
-  ctx.strokeStyle = tint;
-  ctx.globalAlpha = 0.7;
-  ctx.lineWidth = 5;
-  ctx.setLineDash([16, 10]);
+  const brass = 'rgba(214, 178, 106, ';
+  // Slightly darker felt inside the frame.
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.16)';
   ctx.beginPath();
-  ctx.roundRect(10, 10, 236, 320, 18);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.globalAlpha = 0.12;
-  ctx.fillStyle = tint;
+  ctx.roundRect(14, 14, W - 28, H - 28, 26);
   ctx.fill();
-  ctx.globalAlpha = 0.55;
-  ctx.save();
-  ctx.translate(128 - 48, 170 - 48);
-  ctx.scale(96 / 512, 96 / 512);
-  ctx.fill(new Path2D(ICON_PATHS[icon]));
-  ctx.restore();
+  // Outer and inner printed lines.
+  ctx.strokeStyle = brass + '0.55)';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.roundRect(14, 14, W - 28, H - 28, 26);
+  ctx.stroke();
+  ctx.strokeStyle = brass + '0.28)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(30, 30, W - 60, H - 60, 16);
+  ctx.stroke();
+  // Corner brackets.
+  ctx.strokeStyle = brass + '0.7)';
+  ctx.lineWidth = 5;
+  ctx.lineCap = 'round';
+  const L = 46;
+  for (const [x, y, sx, sy] of [
+    [44, 44, 1, 1],
+    [W - 44, 44, -1, 1],
+    [44, H - 44, 1, -1],
+    [W - 44, H - 44, -1, -1],
+  ] as const) {
+    ctx.beginPath();
+    ctx.moveTo(x, y + sy * L);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x + sx * L, y);
+    ctx.stroke();
+  }
+  // Name of the place, with a small role diamond.
+  ctx.font = '800 66px "Alegreya SC", Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const text = label.toLowerCase();
+  const tw = ctx.measureText(text).width;
+  const cy = H / 2;
+  const dx = W / 2 - tw / 2 - 16;
+  ctx.fillStyle = tint;
+  ctx.globalAlpha = 0.85;
+  ctx.beginPath();
+  ctx.moveTo(dx, cy - 14);
+  ctx.lineTo(dx + 12, cy);
+  ctx.lineTo(dx, cy + 14);
+  ctx.lineTo(dx - 12, cy);
+  ctx.closePath();
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = brass + '0.8)';
+  ctx.fillText(text, W / 2 + 14, cy + 2);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
   matCache.set(key, t);
   return t;
 }

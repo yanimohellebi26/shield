@@ -1,19 +1,22 @@
 import { create } from 'zustand';
 import {
+  actorOf,
   apply,
   chooseBotCommand,
   createGame,
   eventsFor,
   legalCommands,
+  newRecord,
   viewFor,
   type Card,
   type Command,
   type GameEvent,
+  type GameRecord,
   type GameState,
   type GameView,
 } from '@shield/engine';
 import type { Vec3 } from './layout';
-import type { LobbyInfo } from '../net/online';
+import type { ChatMessage, LobbyInfo } from '../net/online';
 import { t, tYou } from '../ui/i18n';
 
 export const LOCAL_ID = 'you';
@@ -119,7 +122,8 @@ export interface LogLine {
   tone: 'neutral' | 'hit' | 'block' | 'shield' | 'charge' | 'life' | 'out';
 }
 
-export type NetStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error';
+/** 'lost': the seat could not be recovered (server restarted, table closed). */
+export type NetStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'lost' | 'error';
 
 interface Store {
   /** 'room' = waiting room of an online table. */
@@ -158,17 +162,27 @@ interface Store {
 
   start: (players: number, name: string) => void;
   backToLobby: () => void;
-  send: (cmd: Command) => void;
+  /** Plays a command; `actor` is the local player unless a local bot is playing. */
+  send: (cmd: Command, actor?: string) => void;
   setTargeting: (t: Targeting) => void;
   pickTarget: (id: string) => void;
   setSpeed: (s: number) => void;
   onLobby: (info: LobbyInfo) => void;
+  onChat: (m: ChatMessage) => void;
+  /** Table chat (online): last messages, newest last. */
+  chat: (ChatMessage & { id: number })[];
+  /** Chat messages arrived while the chat panel was closed. */
+  chatUnread: number;
+  chatOpen: boolean;
+  setChatOpen: (open: boolean) => void;
   onOnlineStart: (view: GameView, legal: Command[]) => void;
   onOnlineUpdate: (events: GameEvent[], view: GameView, legal: Command[]) => void;
   onOnlineResume: (view: GameView, legal: Command[]) => void;
 }
 
 let botTimer: ReturnType<typeof setTimeout> | undefined;
+/** The local game being recorded for the dataset (docs/DATASET.md). */
+let record: GameRecord | null = null;
 
 /** Dev/test switches from the URL: ?autoplay (your seat plays itself), ?speed=4. */
 const params = new URLSearchParams(typeof location === 'undefined' ? '' : location.search);
@@ -233,24 +247,30 @@ export const useGame = create<Store>((set, get) => ({
   log: [],
   focus: null,
   portrait: false,
+  chat: [],
+  chatUnread: 0,
+  chatOpen: false,
 
   start(count, name) {
     clearTimeout(botTimer);
     const bots = [...BOT_NAMES].sort(() => Math.random() - 0.5).slice(0, count - 1);
     const players = [{ id: LOCAL_ID, name: name.trim() || t('lobby.namePlaceholder') }, ...bots.map((b, i) => ({ id: `bot${i}`, name: b }))];
-    const game = createGame({ players, seed: (Math.random() * 2 ** 32) >>> 0 });
+    const seed = (Math.random() * 2 ** 32) >>> 0;
+    const game = createGame({ players, seed });
+    record = AUTOPLAY ? null : newRecord('local', game, seed, players.map((p) => ({ ...p, kind: p.id === LOCAL_ID ? ('human' as const) : ('bot' as const) })));
     set({ ...openingState(viewFor(game, LOCAL_ID)), mode: 'local', game, legal: legalCommands(game, LOCAL_ID) });
     setTimeout(() => void pump(), 350);
   },
 
   backToLobby() {
+    record = null;
     clearTimeout(botTimer);
     generation++;
     if (get().mode === 'online') void import('../net/online').then(({ online }) => online.leave());
-    set({ screen: 'lobby', mode: 'local', game: null, shown: null, table: null, legal: [], queue: [], busy: false, flyers: {}, popups: [], bursts: [], dealing: false });
+    set({ screen: 'lobby', mode: 'local', game: null, shown: null, table: null, legal: [], queue: [], busy: false, flyers: {}, popups: [], bursts: [], dealing: false, chat: [], chatUnread: 0, chatOpen: false, netStatus: 'idle' });
   },
 
-  send(cmd) {
+  send(cmd, actor = LOCAL_ID) {
     if (get().mode === 'online') {
       // The server applies it and sends the result back to everyone.
       set({ targeting: null, legal: [] });
@@ -259,8 +279,15 @@ export const useGame = create<Store>((set, get) => ({
     }
     const { game } = get();
     if (!game || game.phase === 'over') return;
-    const actor = game.players[game.current]!.id;
     const { state, events } = apply(game, actor, cmd);
+    if (record) {
+      record.moves.push({ player: actor, cmd, by: actor === LOCAL_ID ? 'human' : 'bot', ms: Date.now() - Date.parse(record.startedAt) });
+      if (state.phase === 'over') {
+        const done: GameRecord = { ...record, finished: true, winner: state.winner, endedAt: new Date().toISOString() };
+        record = null;
+        void import('../net/server').then(({ uploadRecord }) => uploadRecord(done));
+      }
+    }
     set((s) => ({
       game: state,
       legal: legalCommands(state, LOCAL_ID),
@@ -272,7 +299,16 @@ export const useGame = create<Store>((set, get) => ({
   },
 
   onLobby(info) {
-    set((s) => ({ table: info, mode: 'online', screen: s.screen === 'lobby' && !info.started ? 'room' : s.screen }));
+    // Joined during a game: wait in the room until the next one starts.
+    set((s) => ({ table: info, mode: 'online', screen: s.screen === 'lobby' && (!info.started || info.waiting) ? 'room' : s.screen }));
+  },
+
+  onChat(m) {
+    set((s) => ({ chat: [...s.chat.slice(-49), { ...m, id: nextId() }], chatUnread: s.chatOpen || m.you ? s.chatUnread : s.chatUnread + 1 }));
+  },
+
+  setChatOpen(open) {
+    set((s) => ({ chatOpen: open, chatUnread: open ? 0 : s.chatUnread }));
   },
 
   onOnlineStart(view, legal) {
@@ -344,13 +380,13 @@ function scheduleBot() {
   const { game, busy, queue, speed, mode } = useGame.getState();
   if (mode === 'online') return;
   if (!game || busy || queue.length || game.phase === 'over') return;
-  const me = game.players[game.current]!;
-  if (me.id === LOCAL_ID && !AUTOPLAY) return;
+  const who = actorOf(game);
+  if (who === LOCAL_ID && !AUTOPLAY) return;
   botTimer = setTimeout(() => {
     const g = useGame.getState().game;
     if (!g || g !== game) return;
-    const legal = legalCommands(g, me.id);
-    useGame.getState().send(chooseBotCommand(viewFor(g, me.id), legal));
+    const legal = legalCommands(g, who);
+    useGame.getState().send(chooseBotCommand(viewFor(g, who), legal), who);
   }, 650 / speed);
 }
 

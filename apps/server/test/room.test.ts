@@ -103,21 +103,59 @@ describe('online table', () => {
     await waitFor(() => starts.size === 2);
     const waiting = starts.get(host)!.view.current === 'you' ? guest : host;
     waiting.send('cmd', { type: 'act', action: { type: 'charge' } });
-    await waitFor(() => errors.includes('not-your-turn'));
+    await waitFor(() => errors.some((e) => e.startsWith('Illegal command')));
     await host.leave();
     await guest.leave();
   });
 
-  it('refuses to join a table that has started', async () => {
-    const a = new Client(`ws://localhost:${PORT}`);
-    const host = await a.create('shield', { name: 'Ana', seats: 2 });
-    host.onMessage('lobby', () => undefined);
-    host.onMessage('start', () => undefined);
-    host.onMessage('update', () => undefined);
+  it('someone joining a game in progress waits, then plays the next game as an extra seat', async () => {
+    const host = await new Client(`ws://localhost:${PORT}`).create('shield', { name: 'Ana', seats: 2 });
+    const guest = await new Client(`ws://localhost:${PORT}`).joinById(host.roomId, { name: 'Ben' });
+    const la = { updates: 0, gameOver: false, views: [] as GameView[], errors: [] as string[] };
+    const lb = { updates: 0, gameOver: false, views: [] as GameView[], errors: [] as string[] };
+    for (const r of [host, guest]) r.onMessage('lobby', () => undefined);
+    autoplay(host, la);
+    autoplay(guest, lb);
     host.send('start');
-    await sleep(150);
-    await expect(new Client(`ws://localhost:${PORT}`).joinById(host.roomId, { name: 'Late' })).rejects.toThrow();
+    await waitFor(() => la.views.length > 0);
+
+    const late = await new Client(`ws://localhost:${PORT}`).joinById(host.roomId, { name: 'Cleo' });
+    const lateLobby: LobbyMessage[] = [];
+    const lateStart: Payload[] = [];
+    late.onMessage('lobby', (m: LobbyMessage) => lateLobby.push(m));
+    late.onMessage('start', (p: Payload) => lateStart.push(p));
+    late.onMessage('update', () => undefined);
+    await waitFor(() => lateLobby.length > 0);
+    expect(lateLobby.at(-1)).toMatchObject({ started: true, waiting: true });
+    expect(lateStart).toHaveLength(0);
+
+    await waitFor(() => la.gameOver, 60_000);
+    host.send('rematch');
+    await waitFor(() => lateStart.length === 1);
+    expect(lateStart[0]!.view.players).toHaveLength(3); // 2 seats chosen, 3 people: the table grows
+    expect(lateStart[0]!.view.players.some((p) => p.id === 'you')).toBe(true);
+    for (const r of [host, guest, late]) await r.leave();
+  }, 90_000);
+
+  it('relays chat messages and reactions to everyone at the table', async () => {
+    const host = await new Client(`ws://localhost:${PORT}`).create('shield', { name: 'Ana', seats: 2 });
+    const guest = await new Client(`ws://localhost:${PORT}`).joinById(host.roomId, { name: 'Ben' });
+    const got: { from: string; you: boolean; text?: string; reaction?: string }[] = [];
+    host.onMessage('lobby', () => undefined);
+    guest.onMessage('lobby', () => undefined);
+    host.onMessage('chat', (m) => got.push(m));
+    guest.onMessage('chat', () => undefined);
+    guest.send('chat', { text: '  bien   joué  ' });
+    await waitFor(() => got.length === 1);
+    expect(got[0]).toMatchObject({ from: 'Ben', you: false, text: 'bien joué' });
+    guest.send('chat', { reaction: 'bravo' }); // too soon: dropped
+    await sleep(900);
+    guest.send('chat', { reaction: 'nonsense' }); // unknown: dropped
+    host.send('chat', { reaction: 'gg' });
+    await waitFor(() => got.length === 2);
+    expect(got[1]).toMatchObject({ from: 'Ana', you: true, reaction: 'gg' });
     await host.leave();
+    await guest.leave();
   });
 });
 

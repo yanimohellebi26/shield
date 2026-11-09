@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import {
+  actorOf,
+  newRecord,
+  replayRecord,
   apply,
   chooseBotCommand,
   createGame,
@@ -152,11 +155,39 @@ describe('shields', () => {
     expect(viewFor(state, 'p0').players[0]!.shieldPrivate).toBe(false);
   });
 
-  it('a shield someone else gives you stays secret to you, and to them', () => {
-    const s = game([{}, { shieldSeenByOwner: true }], [9]);
+  it('a shield someone else gives you is visible to you only, not to the giver', () => {
+    const s = game([{}, {}, {}], [9]);
     const { state } = apply(s, 'p0', { type: 'act', action: { type: 'shieldOther', target: 'p1' } });
-    expect(viewFor(state, 'p1').players[1]!.shield).toEqual({ hidden: true });
+    expect(viewFor(state, 'p1').players[1]).toMatchObject({ shield: { rank: 9 }, shieldPrivate: true });
     expect(viewFor(state, 'p0').players[1]!.shield).toEqual({ hidden: true });
+    expect(viewFor(state, 'p2').players[1]!.shield).toEqual({ hidden: true });
+  });
+});
+
+describe('life replacement on any turn', () => {
+  it('a player under 5 HP may replace their life during someone else\'s turn', () => {
+    const s = game([{}, { hp: 3, life: [1, 2] }, {}], [8]);
+    expect(legalCommands(s, 'p1')).toEqual([{ type: 'lifeSwap' }]);
+    expect(legalCommands(s, 'p2')).toEqual([]);
+    const { state, events } = apply(s, 'p1', { type: 'lifeSwap' });
+    expect(state.players[1]!.hp).toBe(8);
+    expect(state.current).toBe(0); // still p0's turn
+    expect(events[0]).toMatchObject({ type: 'lifeSwap', player: 'p1' });
+    expect(legalCommands(state, 'p1')).toEqual([]); // once per game
+  });
+
+  it('at 1 HP the offer pauses the table until that player decides', () => {
+    const s = game([{}, { hp: 1, life: [1] }], [6]);
+    const { state } = apply(s, 'p1', { type: 'lifeSwap' });
+    expect(state.phase).toBe('lifeOffer');
+    expect(actorOf(state)).toBe('p1');
+    expect(legalCommands(state, 'p0')).toEqual([]);
+    expect(viewFor(state, 'p1').lifeOffer).toMatchObject({ rank: 6 });
+    expect(viewFor(state, 'p0')).toMatchObject({ lifeOffer: null, lifeOfferTo: 'p1' });
+    const after = apply(state, 'p1', { type: 'acceptLife' }).state;
+    expect(after.players[1]!.hp).toBe(6);
+    expect(after.phase).toBe('action');
+    expect(actorOf(after)).toBe('p0');
   });
 });
 
@@ -287,9 +318,10 @@ describe('life replacement', () => {
     expect(state.discard.map((c) => c.rank)).toEqual([1]);
   });
 
-  it('only the current player, on their own turn', () => {
-    const s = game([{}, { hp: 3 }], [2]);
+  it('not at 5 HP or more, and never for the actions of another player\'s turn', () => {
+    const s = game([{}, { hp: 5 }], [2]);
     expect(() => apply(s, 'p1', { type: 'lifeSwap' })).toThrow();
+    expect(() => apply(s, 'p1', charge)).toThrow();
   });
 });
 
@@ -367,5 +399,31 @@ describe('invariants over random bot games (2–8 players)', () => {
       }),
       { numRuns: 60 },
     );
+  });
+});
+
+describe('game records (dataset)', () => {
+  it('a recorded game replays exactly; a tampered one is rejected', () => {
+    const players = [
+      { id: 'you', name: 'Me', kind: 'human' as const },
+      { id: 'b1', name: 'Bot', kind: 'bot' as const },
+      { id: 'b2', name: 'Bot 2', kind: 'bot' as const },
+    ];
+    let state = createGame({ players, seed: 1234 });
+    const rec = newRecord('local', state, 1234, players);
+    let rnd = 7;
+    const random = () => ((rnd = (rnd * 16807) % 2147483647) / 2147483647);
+    while (state.phase !== 'over') {
+      const who = actorOf(state);
+      const cmd = chooseBotCommand(viewFor(state, who), legalCommands(state, who), random);
+      rec.moves.push({ player: who, cmd, by: who === 'you' ? 'human' : 'bot', ms: 0 });
+      state = apply(state, who, cmd).state;
+    }
+    rec.finished = true;
+    rec.winner = state.winner;
+    const ok = replayRecord(rec);
+    expect(ok.ok).toBe(true);
+    expect(replayRecord({ ...rec, winner: rec.winner === 'you' ? 'b1' : 'you' }).ok).toBe(false);
+    expect(replayRecord({ ...rec, seed: 99 }).ok).toBe(false);
   });
 });

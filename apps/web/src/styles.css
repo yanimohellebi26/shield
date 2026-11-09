@@ -221,6 +221,8 @@ kbd {
 .gameover-card,
 .modal,
 .log,
+.chat-panel,
+.chat-toast,
 .turn-banner span {
   background: var(--panel-bg);
   border: 1px solid var(--line);
@@ -505,6 +507,153 @@ kbd {
   background: #4a1d14;
   border: 1px solid #8a3226;
   font-weight: 700;
+}
+
+/* The seat could not be recovered: say so and offer the way out. */
+.net-banner.lost {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.net-banner .ghost {
+  padding: 5px 12px;
+}
+
+/* ================================================================ chat */
+
+.chat-panel {
+  position: absolute;
+  z-index: 25;
+  top: calc(env(safe-area-inset-top, 0px) + 64px);
+  right: 16px;
+  width: min(320px, calc(100% - 32px));
+  max-height: min(460px, calc(100% - 200px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-radius: 8px;
+}
+.chat-panel.embedded {
+  position: static;
+  width: 100%;
+  max-height: 260px;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+.chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--display);
+  font-weight: 800;
+  color: var(--gold);
+}
+.icon-btn.small {
+  width: 28px;
+  height: 28px;
+}
+.icon-btn.small svg {
+  width: 14px;
+  height: 14px;
+}
+.chat-list {
+  flex: 1;
+  min-height: 60px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  line-height: 1.3;
+}
+.chat-empty {
+  color: var(--muted);
+  font-style: italic;
+}
+.chat-line b {
+  font-family: var(--display);
+  color: var(--gold-hi);
+}
+.chat-line.you b {
+  color: var(--muted);
+}
+.chat-line.reaction {
+  color: var(--amber);
+  font-weight: 700;
+}
+.chat-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.chip-btn {
+  padding: 4px 9px;
+  border-radius: 7px;
+  font: 700 13px var(--text);
+  color: var(--ink);
+  background: var(--panel-bg);
+  border: 1px solid var(--line);
+  box-shadow: var(--panel-edge), 0 2px 0 #0c0805;
+}
+.chip-btn:hover {
+  border-color: var(--gold);
+}
+.chip-btn:active {
+  transform: translateY(1px);
+}
+.chat-input {
+  display: flex;
+  gap: 6px;
+}
+.chat-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--ink);
+  font: 500 14px var(--text);
+}
+.chat-input .ghost {
+  padding: 7px 12px;
+}
+.icon-btn {
+  position: relative;
+}
+.badge-count {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font: 800 11px/18px var(--text);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.chat-toast {
+  position: absolute;
+  z-index: 24;
+  top: calc(env(safe-area-inset-top, 0px) + 64px);
+  right: 16px;
+  max-width: min(320px, calc(100% - 32px));
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  animation: rise-in 0.2s ease-out;
+}
+.chat-toast b {
+  font-family: var(--display);
+  color: var(--gold-hi);
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
 }
 
 /* ================================================================ top bar */

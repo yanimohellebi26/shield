@@ -2,6 +2,7 @@ import { isHidden, type PlayerView } from '@shield/engine';
 import { CARD_H, slotPos, deckPos, discardPos, seatLayouts, type SeatLayout, type Vec3 } from '../game/layout';
 import { LOCAL_ID, useGame, type Popup } from '../game/store';
 import { useAnchor } from '../three/anchors';
+import { lifeCards } from '../game/lifeCards';
 import { cardUrl } from '../three/textures';
 import { t } from './i18n';
 import { useLang } from './prefs';
@@ -86,7 +87,7 @@ function OpponentTile({ player, seat }: { player: PlayerView; seat: SeatLayout }
   const targetable = !!targeting && !out;
   const shield = ov.shieldCard[player.id] ?? player.shield;
   const shieldValue = shield && !isHidden(shield) ? shield.rank : '?';
-  const life = ov.hideLife[player.id] ? [] : player.life;
+  const life = ov.hideLife[player.id] ? [] : dealing ? player.life : lifeCards(player.life, hp);
   return (
     <Anchored
       pos={seat.pos}

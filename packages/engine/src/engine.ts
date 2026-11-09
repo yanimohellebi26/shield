@@ -73,7 +73,7 @@ export function createGame(opts: NewGameOptions): GameState {
     if (rules.secondPlayerCharge) second.charge.push(take());
     second.hp += rules.secondPlayerHp;
   }
-  const state: GameState = { players, deck, discard: [], current: first, phase: 'action', turn: 1, lifeOffer: null, winner: null, rng, seq: 0 };
+  const state: GameState = { players, deck, discard: [], current: first, phase: 'action', turn: 1, lifeOffer: null, lifeOfferTo: null, winner: null, rng, seq: 0 };
   if (opts.rules) state.rules = { ...opts.rules };
   return state;
 }
@@ -92,19 +92,29 @@ function cardsAvailable(state: GameState): number {
   return state.deck.length + state.discard.length;
 }
 
-/** Every command `playerId` may send right now. Empty when it is not their turn. */
+/** The player the game is waiting for: the one deciding on a 1 HP offer, otherwise the current player. */
+export function actorOf(state: GameState): string {
+  if (state.phase === 'lifeOffer') return state.lifeOfferTo ?? currentPlayer(state).id;
+  return currentPlayer(state).id;
+}
+
+/**
+ * Every command `playerId` may send right now. Life replacement is open to any living player
+ * under 5 HP, on anyone's turn; the four actions only to the current player.
+ */
 export function legalCommands(state: GameState, playerId: string): Command[] {
   if (state.phase === 'over') return [];
-  const me = currentPlayer(state);
-  if (me.id !== playerId) return [];
-
-  if (state.phase === 'lifeOffer') return [{ type: 'acceptLife' }, { type: 'declineLife' }];
+  if (state.phase === 'lifeOffer') return actorOf(state) === playerId ? [{ type: 'acceptLife' }, { type: 'declineLife' }] : [];
 
   const cmds: Command[] = [];
   const canDraw = cardsAvailable(state) > 0;
-  const opponents = state.players.filter((p) => !p.eliminated && p.id !== me.id);
+  const who = state.players.find((p) => p.id === playerId);
+  if (!who || who.eliminated) return [];
+  if (canDraw && !who.lifeSwapUsed && who.hp < LIFE_SWAP_THRESHOLD) cmds.push({ type: 'lifeSwap' });
 
-  if (canDraw && !me.lifeSwapUsed && me.hp < LIFE_SWAP_THRESHOLD) cmds.push({ type: 'lifeSwap' });
+  const me = currentPlayer(state);
+  if (me.id !== playerId) return cmds;
+  const opponents = state.players.filter((p) => !p.eliminated && p.id !== me.id);
 
   const act = (action: Action) => cmds.push({ type: 'act', action });
   const rules = rulesOf(state);
@@ -138,7 +148,8 @@ export function apply(prev: GameState, playerId: string, cmd: Command): ApplyRes
   const state: GameState = JSON.parse(JSON.stringify(prev)) as GameState;
   const events: GameEvent[] = [];
   state.seq++;
-  const me = currentPlayer(state);
+  // Life commands may come from any player; actions only from the current one (checked above).
+  const me = findPlayer(state, playerId);
 
   switch (cmd.type) {
     case 'lifeSwap': {
@@ -147,6 +158,7 @@ export function apply(prev: GameState, playerId: string, cmd: Command): ApplyRes
       if (me.hp === 1) {
         state.phase = 'lifeOffer';
         state.lifeOffer = card;
+        state.lifeOfferTo = me.id;
         events.push({ type: 'lifeOffer', player: me.id, card });
       } else {
         const oldLife = me.life;
@@ -172,6 +184,7 @@ export function apply(prev: GameState, playerId: string, cmd: Command): ApplyRes
         state.discard.push(card);
       }
       state.lifeOffer = null;
+      state.lifeOfferTo = null;
       state.phase = 'action';
       events.push({ type: 'lifeOfferResolved', player: me.id, accepted, card, oldLife, hpBefore, hpAfter: me.hp });
       return { state, events };
@@ -225,8 +238,8 @@ function resolveAction(state: GameState, me: Player, action: Action, events: Gam
       if (oldShield) state.discard.push(oldShield);
       target.shield = card;
       target.shieldRevealed = false;
-      // You may look at a shield you give yourself, not at one someone else gives you.
-      target.shieldSeenByOwner = action.type === 'shieldSelf';
+      // Only the starting shield is unknown to its owner; any later shield is theirs to look at.
+      target.shieldSeenByOwner = true;
       events.push({ type: 'shieldChange', player: me.id, target: target.id, oldShield });
       return;
     }

@@ -52,6 +52,15 @@ The UI reads allowed moves from `store.legal` (engine locally, server online), n
 - Web client: Vercel project `shield-game` (team `yani-mohellebis-projects`), https://shield-game-five.vercel.app. Builds from `master` on every push (`vercel.json`). Env `VITE_SERVER_URL=wss://shield-server-j0kv.onrender.com`.
 - Game server: Render web service `shield-server` (free plan, Frankfurt), https://shield-server-j0kv.onrender.com. Deploys from `master` on every push (`render.yaml`). The free plan sleeps after 15 min idle; first connection then takes ~50 s. `.github/workflows/keep-awake.yml` pings it so it never sleeps (one always-on service fits the 750 free hours/month).
 - Check the live site: `cd apps/web && npx playwright test -c playwright.live.config.ts online`.
+- Game dataset for RL: every human game is recorded (`GameRecord`, `packages/engine/src/record.ts`) to the private Vercel Blob store `shield-games` (Render env `BLOB_READ_WRITE_TOKEN`); local games are POSTed to `/api/games` and checked by replay. See `docs/DATASET.md`.
+
+## Online table behaviour
+
+- Late joiners wait (`LobbyInfo.waiting`) and get a seat in the next game, even past the host's seat count (max 8).
+- Life replacement is legal on anyone's turn: the server never checks "your turn", the engine (`legalCommands`, `actorOf`) does.
+- Seats survive long absences: the browser keeps `{code, key}` in localStorage and rejoins with the same key. `net/guard.ts` swallows spurious `offline` events before the Colyseus SDK sees them.
+- Chat: `chat` messages (text ≤ 140 chars or a reaction key), rate-limited server-side, UI in `ui/Chat.tsx`.
+- Life cards on the table are display cards that always add up to HP (`game/lifeCards.ts`).
 
 ## Design system
 
@@ -156,7 +165,7 @@ Add every new key to **both** `fr` and `en` (the `en` dictionary is typed agains
 - Icon set: **game-icons.net** (CC BY 3.0, credited in `CREDITS.md`) through `react-icons/gi`.
 - Components import **semantic names** from `src/ui/icons.tsx` (`IconAttack`, `IconCharge`, `IconNewShield`, `IconSwapShield`, `IconShieldValue`, `IconHeart`, `IconLifeSwap`, `IconLog`, `IconRules`, `IconSettings`, `IconLeave`, `IconClose`, `IconOut`, `IconWinner`, `IconWait`, `IconPlayers`), never `react-icons` directly. Add new icons there.
 - Icons inherit `currentColor`; size them in CSS (`svg { width; height }` per context).
-- Canvas drawings (seat mats) use raw paths from `src/ui/iconPaths.ts` (generated from the same set) with `Path2D`.
+- Seat mats are printed playmat frames drawn in `matTexture` (brass lines, small-caps label, role diamond); the user rejected tinted fills with icons there. `src/ui/iconPaths.ts` holds raw paths if a canvas ever needs an icon.
 - No Unicode or emoji glyphs as icons.
 
 ### Assets

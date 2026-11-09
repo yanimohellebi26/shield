@@ -7,6 +7,7 @@ import { cardUrl } from '../three/textures';
 import { play, setSoundEnabled, useSoundPrefs } from '../audio/sound';
 import { setLang, t } from './i18n';
 import { RulesList, RulesModal, SettingsModal } from './Modals';
+import { ChatButton, ChatPanel, ChatToast } from './Chat';
 import { useLang } from './prefs';
 import { IconAttack, IconCharge, IconLeave, IconLifeSwap, IconLog, IconMuted, IconSound, IconNewShield, IconPlayers, IconRules, IconSettings, IconSwapShield, IconWait, IconWinner } from './icons';
 
@@ -176,7 +177,13 @@ export function WaitingRoom() {
   return (
     <div className="lobby">
       <div className="lobby-card room-card">
-        <div className="room-title">{t('room.title')}</div>
+        <div className="room-title">{table.waiting ? t('room.waitingTitle') : t('room.title')}</div>
+        {table.waiting && (
+          <div className="field-note">
+            <IconWait />
+            {t('room.waitingNote')}
+          </div>
+        )}
         <div className="room-code-label">{t('room.share')}</div>
         <button className="room-code" onClick={copy} title={t('room.copy')}>
           {table.code}
@@ -188,17 +195,18 @@ export function WaitingRoom() {
               {p.host ? <IconWinner /> : <IconPlayers />}
               <span>{p.name}</span>
               {p.you && <small>{t('room.you')}</small>}
+              {p.waiting && <small>{t('room.waitingTag')}</small>}
               {!p.connected && <small>{t('room.away')}</small>}
             </li>
           ))}
-          {Array.from({ length: Math.max(0, table.seats - humans) }, (_, i) => (
+          {!table.started && Array.from({ length: Math.max(0, table.seats - humans) }, (_, i) => (
             <li key={`bot${i}`} className="bot">
               <IconWait />
               <span>{t('room.botSeat')}</span>
             </li>
           ))}
         </ul>
-        {table.isHost ? (
+        {table.started ? null : table.isHost ? (
           <>
             <div className="field">
               <span>{t('lobby.players')}</span>
@@ -214,6 +222,7 @@ export function WaitingRoom() {
             {t('room.waitHost')}
           </div>
         )}
+        <ChatPanel embedded />
         <button className="ghost" onClick={back}>
           <IconLeave />
           {t('room.leave')}
@@ -278,14 +287,27 @@ function ActionBar() {
 
   if (!shown || shown.phase === 'over') return null;
   const me = shown.players.find((p) => p.id === LOCAL_ID)!;
+  function lifeSwapButton() {
+    return (
+      <button className="life-swap" onClick={() => send({ type: 'lifeSwap' })}>
+        <IconLifeSwap />
+        <span>{t('act.lifeSwap')}</span>
+        <small>{me.hp === 1 ? t('act.lifeSwap.see') : t('act.lifeSwap.blind')}</small>
+      </button>
+    );
+  }
   if (me.eliminated) return <div className="action-bar waiting">{t('hint.out')}</div>;
   if (!myTurn) {
-    if (shown.phase === 'lifeOffer' && shown.current === LOCAL_ID) return null;
-    const who = shown.players.find((p) => p.id === shown.current)?.name ?? '';
+    if (shown.phase === 'lifeOffer' && shown.lifeOfferTo === LOCAL_ID) return null;
+    const deciding = shown.phase === 'lifeOffer' && shown.lifeOfferTo ? shown.lifeOfferTo : null;
+    const who = shown.players.find((p) => p.id === (deciding ?? shown.current))?.name ?? '';
+    // Under 5 HP you may replace your life on anyone's turn.
+    const canSwap = !busy && queued === 0 && has((c) => c.type === 'lifeSwap');
     return (
       <div className="action-bar waiting">
         <IconWait />
-        {busy ? '…' : t('hint.waiting', { name: who })}
+        {busy ? '…' : t(deciding ? 'hint.lifeDeciding' : 'hint.waiting', { name: who })}
+        {canSwap && lifeSwapButton()}
       </div>
     );
   }
@@ -328,13 +350,7 @@ function ActionBar() {
         {act('shieldOther') && button('other', <IconSwapShield />, t('act.other'), t('act.other.sub'), 'E', () => setTargeting('shieldOther'))}
         {act('pass') && button('', null, t('act.pass'), t('act.pass.sub'), '', () => send({ type: 'act', action: { type: 'pass' } }))}
       </div>
-      {has((c) => c.type === 'lifeSwap') && (
-        <button className="life-swap" onClick={() => send({ type: 'lifeSwap' })}>
-          <IconLifeSwap />
-          <span>{t('act.lifeSwap')}</span>
-          <small>{me.hp === 1 ? t('act.lifeSwap.see') : t('act.lifeSwap.blind')}</small>
-        </button>
-      )}
+      {has((c) => c.type === 'lifeSwap') && lifeSwapButton()}
     </div>
   );
 }
@@ -344,7 +360,7 @@ function LifeOffer() {
   const shown = useGame((s) => s.shown);
   const busy = useGame((s) => s.busy);
   const send = useGame((s) => s.send);
-  if (!shown || busy || shown.phase !== 'lifeOffer' || !shown.lifeOffer) return null;
+  if (!shown || busy || shown.phase !== 'lifeOffer' || shown.lifeOfferTo !== LOCAL_ID || !shown.lifeOffer) return null;
   const c = shown.lifeOffer;
   return (
     <div className="offer-panel" role="dialog" aria-label={t('offer.title', { card: cardLabel(c) })}>
@@ -465,6 +481,8 @@ export function Hud() {
   const [logOpen, setLogOpen] = useState(() => window.innerWidth > 760);
   const sound = useSoundPrefs();
   const netStatus = useGame((s) => s.netStatus);
+  const isOnline = useGame((s) => s.mode === 'online');
+  const chatOpen = useGame((s) => s.chatOpen);
   if (!shown) return null;
   const current = shown.players.find((p) => p.id === shown.current);
   const mine = shown.current === LOCAL_ID && shown.phase !== 'over';
@@ -478,6 +496,7 @@ export function Hud() {
         )}
         <div className="spacer" />
         <div className="tools">
+          {isOnline && <ChatButton />}
           <button className="icon-btn" onClick={() => setSoundEnabled(!sound.enabled)} title={t('top.sound')} aria-label={t('top.sound')} aria-pressed={sound.enabled}>
             {sound.enabled ? <IconSound /> : <IconMuted />}
           </button>
@@ -497,6 +516,16 @@ export function Hud() {
       </div>
       <TurnBanner />
       {netStatus === 'reconnecting' && <div className="net-banner">{t('net.reconnecting')}</div>}
+      {netStatus === 'lost' && (
+        <div className="net-banner lost">
+          {t('net.lost')}
+          <button className="ghost" onClick={back}>
+            {t('net.backToMenu')}
+          </button>
+        </div>
+      )}
+      {isOnline && chatOpen && <ChatPanel />}
+      {isOnline && <ChatToast />}
       <Log open={logOpen} />
       <ActionBar />
       <LifeOffer />

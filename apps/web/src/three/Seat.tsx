@@ -4,27 +4,32 @@ import * as THREE from 'three';
 import { isHidden, type PlayerView } from '@shield/engine';
 import { CHARGE_SPIN, FLAT, isPortrait, slotPos, type SeatLayout, type Slot } from '../game/layout';
 import { LOCAL_ID, useGame } from '../game/store';
+import { lifeCards } from '../game/lifeCards';
 import { Card3D } from './Card3D';
 import { matTexture } from './textures';
+import { t } from '../ui/i18n';
+import { useLang } from '../ui/prefs';
 
 /** Role colours: life cards wear a crimson border, the single shield a thick blue one. */
 export const LIFE_FRAME = '#c23446';
 export const SHIELD_FRAME = '#3d8bff';
 
-const MAT_TINT: Record<Slot, ['heart' | 'shield' | 'charge', string]> = {
-  life0: ['heart', '#e0606f'],
-  life1: ['heart', '#e0606f'],
-  shield: ['shield', '#6fa8e8'],
-  charge: ['charge', '#e8a54a'],
+/** Printed card places: label key and role colour (life crimson, shield blue, charge amber). */
+const MAT: Record<Slot, ['mat.life' | 'mat.shield' | 'mat.charge', string]> = {
+  life0: ['mat.life', '#c23446'],
+  life1: ['mat.life', '#c23446'],
+  shield: ['mat.shield', '#3d8bff'],
+  charge: ['mat.charge', '#e6a23c'],
 };
 
 function Mat({ seat, slot }: { seat: SeatLayout; slot: Slot }) {
-  const [label, tint] = MAT_TINT[slot];
+  useLang();
+  const [label, tint] = MAT[slot];
   const [x, , z] = slotPos(seat, slot);
   return (
     <mesh position={[x, 0.004, z]} rotation-x={-Math.PI / 2} rotation-z={slot === 'charge' ? CHARGE_SPIN : 0} scale={seat.scale}>
       <planeGeometry args={[0.82, 1.09]} />
-      <meshBasicMaterial map={matTexture(label, tint)} transparent depthWrite={false} toneMapped={false} />
+      <meshBasicMaterial map={matTexture(t(label), tint)} transparent depthWrite={false} toneMapped={false} />
     </mesh>
   );
 }
@@ -70,6 +75,9 @@ export function Seat({ player, seat }: { player: PlayerView; seat: SeatLayout })
   const targetable = !!targeting && !isLocal && !player.eliminated;
   const shield = ov.shieldCard[player.id] ?? player.shield;
   const shieldKnown = shield && !isHidden(shield);
+  const dealing = useGame((s) => s.dealing);
+  // While dealing, the real cards land; afterwards the cards always add up to the HP.
+  const shownLife = dealing ? player.life : lifeCards(player.life, ov.hp[player.id] ?? player.hp);
   const ringColor = targetable ? (targeting === 'attack' ? '#ff4b3a' : '#5aa9ff') : '#ffcf6b';
 
   return (
@@ -80,9 +88,16 @@ export function Seat({ player, seat }: { player: PlayerView; seat: SeatLayout })
       ))}
 
       {!ov.hideLife[player.id] &&
-        player.life.map((c, i) => (
-          <FlatCard key={c.id} seat={seat} slot={i === 0 ? 'life0' : 'life1'}>
-            <Card3D card={c} frame={LIFE_FRAME} />
+        shownLife.map((c, i) => (
+          <FlatCard key={c.id} seat={seat} slot={i === 0 ? 'life0' : 'life1'} stack={i === 2 ? 1 : 0}>
+            {i === 2 ? (
+              // Above 26 HP: a third card, fanned over the second one.
+              <group position={[0.32, -0.22, 0]} rotation-z={-0.12}>
+                <Card3D card={c} frame={LIFE_FRAME} />
+              </group>
+            ) : (
+              <Card3D card={c} frame={LIFE_FRAME} />
+            )}
           </FlatCard>
         ))}
 

@@ -1,3 +1,4 @@
+import './net/guard';
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import gsap from 'gsap';

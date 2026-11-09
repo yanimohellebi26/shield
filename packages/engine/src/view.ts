@@ -16,7 +16,7 @@ export interface PlayerView {
   life: Card[];
   hp: number;
   shield: SlotCard | null;
-  /** The shield is shown to this viewer only (their own, self-chosen, not yet attacked). */
+  /** The shield is shown to this viewer only (their own, not the starting one, not yet attacked). */
   shieldPrivate: boolean;
   chargeCount: number;
   lifeSwapUsed: boolean;
@@ -34,11 +34,14 @@ export interface GameView {
   turn: number;
   /** The 1 HP offer card, present only for the player it is offered to. */
   lifeOffer: Card | null;
+  /** Who is deciding on a 1 HP offer (public: the table waits for them). */
+  lifeOfferTo: string | null;
   winner: string | null;
 }
 
 export function viewFor(state: GameState, viewer: string | null): GameView {
   const current = state.players[state.current]!;
+  const offerTo = state.lifeOfferTo ?? current.id;
   return {
     viewer,
     players: state.players.map((p) => ({
@@ -57,7 +60,8 @@ export function viewFor(state: GameState, viewer: string | null): GameView {
     current: current.id,
     phase: state.phase,
     turn: state.turn,
-    lifeOffer: state.lifeOffer && current.id === viewer ? { ...state.lifeOffer } : null,
+    lifeOffer: state.lifeOffer && offerTo === viewer ? { ...state.lifeOffer } : null,
+    lifeOfferTo: state.phase === 'lifeOffer' ? offerTo : null,
     winner: state.winner,
   };
 }

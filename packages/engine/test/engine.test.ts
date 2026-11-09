@@ -67,11 +67,16 @@ describe('setup', () => {
     expect(s.players[0]!.shieldRevealed).toBe(false);
   });
 
-  it('supports 2 to 8 players and leaves 52 − 3n cards', () => {
+  it('supports 2 to 8 players: one deck up to 4, two decks from 5 (52 or 104 − 3n left)', () => {
     for (let n = 2; n <= 8; n++) {
       const players = Array.from({ length: n }, (_, i) => ({ id: `p${i}`, name: `P${i}` }));
-      expect(createGame({ players, seed: n }).deck).toHaveLength(52 - 3 * n);
+      const s = createGame({ players, seed: n });
+      expect(s.deck).toHaveLength((n <= 4 ? 52 : 104) - 3 * n);
+      const ids = [...s.deck, ...s.players.flatMap((p) => [...p.life, p.shield!])].map((c) => c.id);
+      expect(new Set(ids).size).toBe(ids.length);
     }
+    const players = Array.from({ length: 3 }, (_, i) => ({ id: `p${i}`, name: `P${i}` }));
+    expect(createGame({ players, seed: 1, rules: { decks: 2 } }).deck).toHaveLength(104 - 9);
     expect(() => createGame({ players: [{ id: 'a', name: 'A' }], seed: 1 })).toThrow();
     const nine = Array.from({ length: 9 }, (_, i) => ({ id: `p${i}`, name: `P${i}` }));
     expect(() => createGame({ players: nine, seed: 1 })).toThrow();
@@ -294,7 +299,7 @@ describe('turns, discard and deck', () => {
 });
 
 describe('invariants over random bot games (2–8 players)', () => {
-  it('conserves the 52 cards, never leaks hidden cards, and keeps state consistent', () => {
+  it('conserves every card, never leaks hidden cards, and keeps state consistent', () => {
     fc.assert(
       fc.property(fc.integer({ min: 2, max: 8 }), fc.integer({ min: 0, max: 2 ** 31 }), (n, seed) => {
         const players = Array.from({ length: n }, (_, i) => ({ id: `p${i}`, name: `P${i}` }));
@@ -313,8 +318,9 @@ describe('invariants over random bot games (2–8 players)', () => {
             ...(s.lifeOffer ? [s.lifeOffer] : []),
             ...s.players.flatMap((p) => [...p.life, ...(p.shield ? [p.shield] : []), ...p.charge]),
           ];
-          expect(all).toHaveLength(52);
-          expect(new Set(all.map((c) => c.id)).size).toBe(52);
+          const total = n <= 4 ? 52 : 104;
+          expect(all).toHaveLength(total);
+          expect(new Set(all.map((c) => c.id)).size).toBe(total);
 
           for (const p of s.players) {
             if (p.eliminated) expect(p.hp).toBeLessThanOrEqual(0);

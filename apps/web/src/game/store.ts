@@ -183,7 +183,9 @@ function openingState(view: GameView): Partial<Store> {
   const n = view.players.length;
   const second = n === 2 ? view.players[(view.players.indexOf(first) + 1) % 2]! : null;
   // The table starts empty with a full deck; the shuffle and deal fill it.
-  const empty: GameView = { ...view, deckCount: 52, players: view.players.map((p) => ({ ...p, life: [], shield: null, chargeCount: 0 })) };
+  // Everything dealt starts in the deck (52 or 104 cards depending on the table size).
+  const dealt = view.players.reduce((t, p) => t + p.life.length + (p.shield ? 1 : 0) + p.chargeCount, 0);
+  const empty: GameView = { ...view, deckCount: view.deckCount + dealt, players: view.players.map((p) => ({ ...p, life: [], shield: null, chargeCount: 0 })) };
   generation++;
   return {
     screen: 'game',

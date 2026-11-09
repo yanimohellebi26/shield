@@ -29,13 +29,23 @@ export function cardLabel(card: Card): string {
   return `${rankLabel(card.rank)}${suit}`;
 }
 
-/** The standard 52-card deck, unshuffled. */
-export function fullDeck(): Card[] {
+/**
+ * `copies` standard 52-card decks, unshuffled. Card ids stay unique across copies
+ * ("S12" in the first deck, "S12.1" in the second…).
+ */
+export function fullDeck(copies = 1): Card[] {
   const cards: Card[] = [];
-  for (const suit of SUITS) {
-    for (let rank = 1; rank <= 13; rank++) cards.push({ id: `${suit}${rank}`, suit, rank });
+  for (let k = 0; k < copies; k++) {
+    for (const suit of SUITS) {
+      for (let rank = 1; rank <= 13; rank++) cards.push({ id: k ? `${suit}${rank}.${k}` : `${suit}${rank}`, suit, rank });
+    }
   }
   return cards;
+}
+
+/** Decks in play for a table size: one up to 4 players, two from 5 (keeps cards from repeating). */
+export function decksFor(players: number): number {
+  return players <= 4 ? 1 : 2;
 }
 
 export function sum(cards: readonly Card[]): number {

@@ -1,4 +1,4 @@
-import { fullDeck, LIFE_SWAP_THRESHOLD, MAX_PLAYERS, MIN_PLAYERS, sum, value } from './cards';
+import { decksFor, fullDeck, LIFE_SWAP_THRESHOLD, MAX_PLAYERS, MIN_PLAYERS, sum, value } from './cards';
 import { nextRandom, shuffle } from './rng';
 import { DEFAULT_RULES, RuleError, type Action, type Card, type Command, type GameEvent, type GameState, type Player, type RuleOptions } from './types';
 
@@ -29,11 +29,13 @@ export function createGame(opts: NewGameOptions): GameState {
   if (new Set(opts.players.map((p) => p.id)).size !== n) throw new RuleError('Player ids must be unique');
 
   let rng = (opts.seed ?? Date.now()) >>> 0;
+  const wanted = opts.rules?.decks ?? DEFAULT_RULES.decks;
+  const copies = wanted === 'auto' ? decksFor(n) : Math.max(1, Math.round(wanted));
   let deck: Card[];
   if (opts.deckTopFirst) {
     deck = opts.deckTopFirst.slice().reverse();
   } else {
-    [deck, rng] = shuffle(fullDeck(), rng);
+    [deck, rng] = shuffle(fullDeck(copies), rng);
   }
 
   const take = (): Card => {

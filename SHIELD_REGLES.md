@@ -391,6 +391,7 @@ Ce fichier constitue la transcription des règles connues et de leurs limites ac
 | — | Un seul bouclier | Chaque joueur a **un seul bouclier** à la fois, face cachée tant qu'il n'a pas été attaqué, face visible ensuite. |
 | 1–3 | Charge empilée et secrète | Les cartes de charge sont **empilées** en une seule pile. Personne, propriétaire compris, ne connaît la charge avant que son propriétaire frappe. |
 | — | Charge menacée (révisée après l'étude d'équilibrage, `docs/EQUILIBRAGE.md`) | Si un joueur qui a une charge **subit des dégâts** (l'attaque dépasse son bouclier), il **perd toute sa charge** (cartes à la défausse, face visible), quelle que soit sa valeur. Si le bouclier bloque tout (0 dégât), la charge n'est pas menacée. *Règle précédente, abandonnée : perte seulement si l'attaque dépassait la charge ; elle rendait l'accumulation de charges dominante.* |
+| — | Nombre de paquets | **1 paquet de 52 cartes de 2 à 4 joueurs, 2 paquets mélangés (104 cartes) de 5 à 8 joueurs.** Avec un seul paquet, à 8 joueurs, 26 % des cartes révélées avaient déjà été vues dans la partie ; avec deux, presque aucune. |
 | — | Partie à deux joueurs | Le joueur qui joue **en second commence avec 3 HP de plus** (compense l'avantage du premier joueur : 55–57 % de victoires sans bonus, 51–52 % avec). |
 
 ### 14.2 Valeurs par défaut proposées (modifiables)

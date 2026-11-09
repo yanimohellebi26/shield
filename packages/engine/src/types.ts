@@ -42,10 +42,12 @@ export interface RuleOptions {
   secondPlayerCharge: boolean;
   /** In a 2-player game, extra starting HP for the second player (default 3: evens out the first-player edge). */
   secondPlayerHp: number;
+  /** Number of 52-card decks shuffled together; 'auto' = 1 for 2–4 players, 2 for 5–8. */
+  decks: number | 'auto';
 }
 
 /** Standard rules (SHIELD_REGLES.md §14), chosen on 2026-11-08 from the balance study in docs/EQUILIBRAGE.md. */
-export const DEFAULT_RULES: RuleOptions = { maxCharge: Infinity, chargeLoss: 'anyDamage', noAttackFirstTurn: false, secondPlayerCharge: false, secondPlayerHp: 3 };
+export const DEFAULT_RULES: RuleOptions = { maxCharge: Infinity, chargeLoss: 'anyDamage', noAttackFirstTurn: false, secondPlayerCharge: false, secondPlayerHp: 3, decks: 'auto' };
 
 export interface GameState {
   players: Player[];

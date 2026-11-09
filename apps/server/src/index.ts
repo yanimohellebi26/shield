@@ -6,7 +6,9 @@ import { ShieldRoom } from './ShieldRoom';
 const port = Number(process.env.PORT ?? 2567);
 
 const server = defineServer({
-  transport: new WebSocketTransport({ pingInterval: 10_000 }),
+  // A client that misses 3 pings in a row (30-40 s of silence) is dropped; shorter network
+  // hiccups (Wi-Fi, mobile) are tolerated.
+  transport: new WebSocketTransport({ pingInterval: 10_000, pingMaxRetries: 3 }),
   rooms: { shield: defineRoom(ShieldRoom) },
 });
 

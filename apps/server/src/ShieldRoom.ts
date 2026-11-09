@@ -37,6 +37,8 @@ interface Human {
   sessionId: string;
   name: string;
   connected: boolean;
+  /** When the connection dropped (for the log). */
+  droppedAt?: number;
   /** Engine player id once the game has started. */
   playerId?: string;
 }
@@ -155,10 +157,12 @@ export class ShieldRoom extends Room {
     this.sendLobby();
   }
 
-  async onDrop(client: Client) {
+  async onDrop(client: Client, code?: number) {
     const h = this.human(client.sessionId);
     if (!h) return;
     h.connected = false;
+    h.droppedAt = Date.now();
+    this.log(`drop ${h.name} code=${code ?? '?'}`);
     this.sendLobby();
     if (this.game && this.currentHuman() === h) this.scheduleNext(ABSENT_TURN_MS);
     try {
@@ -172,14 +176,16 @@ export class ShieldRoom extends Room {
     const h = this.human(client.sessionId);
     if (!h) return;
     h.connected = true;
+    this.log(`reconnect ${h.name} after ${h.droppedAt ? ((Date.now() - h.droppedAt) / 1000).toFixed(1) : '?'}s`);
     this.sendLobby();
     if (this.game && h.playerId) client.send('resume', this.payloadFor(h.playerId, []));
     if (this.game && this.currentHuman() === h) this.scheduleNext();
   }
 
-  onLeave(client: Client) {
+  onLeave(client: Client, code?: number) {
     const h = this.human(client.sessionId);
     if (!h) return;
+    this.log(`leave ${h.name} code=${code ?? '?'}`);
     if (!this.game) {
       // Before the game: free the seat. The next player becomes host.
       this.humans = this.humans.filter((x) => x !== h);
@@ -270,6 +276,12 @@ export class ShieldRoom extends Room {
   }
 
   // ------------------------------------------------------------------ helpers
+
+  /** One line per connection event, readable in the Render logs. Silent in tests. */
+  private log(msg: string) {
+    if (process.env.VITEST) return;
+    console.log(`[${this.roomId}] ${msg}`);
+  }
 
   private payloadFor(playerId: string, events: GameEvent[]) {
     const g = this.game!;

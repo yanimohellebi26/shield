@@ -23,6 +23,7 @@ interface Payload {
 }
 
 const TOKEN_KEY = 'shield.reconnect';
+const BANNER_DELAY_MS = 3000;
 
 function serverUrl(): string {
   const env = import.meta.env.VITE_SERVER_URL as string | undefined;
@@ -64,12 +65,23 @@ function attach(r: Room) {
   r.onMessage('update', (p: Payload) => store().onOnlineUpdate(p.events, p.view, p.legal));
   r.onMessage('resume', (p: Payload) => store().onOnlineResume(p.view, p.legal));
   r.onMessage('error', (e: { message: string }) => console.warn('server:', e.message));
-  r.onDrop(() => useGame.setState({ netStatus: 'reconnecting' }));
+  // Keep retrying for as long as the server holds the seat (120 s), at most 2 s apart.
+  r.reconnection.maxRetries = 70;
+  r.reconnection.maxDelay = 2000;
+  // Short network blips reconnect within a second: only show the banner if it takes longer.
+  let bannerTimer: ReturnType<typeof setTimeout> | undefined;
+  r.onDrop((code, reason) => {
+    console.warn(`connection dropped (${code}${reason ? `: ${reason}` : ''}), reconnecting`);
+    clearTimeout(bannerTimer);
+    bannerTimer = setTimeout(() => useGame.setState({ netStatus: 'reconnecting' }), BANNER_DELAY_MS);
+  });
   r.onReconnect(() => {
+    clearTimeout(bannerTimer);
     rememberToken(r);
     useGame.setState({ netStatus: 'connected' });
   });
   r.onLeave(() => {
+    clearTimeout(bannerTimer);
     if (room === r) room = null;
     forgetToken();
     useGame.setState({ netStatus: 'idle' });

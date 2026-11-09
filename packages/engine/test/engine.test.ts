@@ -22,6 +22,7 @@ interface PlayerSpec {
   life?: number[];
   shield?: number;
   shieldRevealed?: boolean;
+  shieldSeenByOwner?: boolean;
   charge?: number[];
   lifeSwapUsed?: boolean;
 }
@@ -38,6 +39,7 @@ function game(players: PlayerSpec[], deckTopFirst: number[] = [], current = 0): 
         hp: s.hp ?? life.reduce((t, c) => t + c.rank, 0),
         shield: C(s.shield ?? 5, 'C'),
         shieldRevealed: s.shieldRevealed ?? false,
+        shieldSeenByOwner: s.shieldSeenByOwner ?? false,
         charge: (s.charge ?? []).map((r) => C(r, 'D')),
         lifeSwapUsed: s.lifeSwapUsed ?? false,
         eliminated: false,
@@ -132,6 +134,29 @@ describe('shields', () => {
     expect(state.players[1]!.shieldRevealed).toBe(false);
     expect(state.discard.map((c) => c.rank)).toEqual([12]);
     expect(events[0]).toMatchObject({ type: 'shieldChange', target: 'p1', oldShield: { rank: 12 } });
+  });
+
+  it('the starting shield is secret to its owner too', () => {
+    const s = game([{}, {}]);
+    expect(viewFor(s, 'p0').players[0]!.shield).toEqual({ hidden: true });
+  });
+
+  it('a shield you give yourself is visible to you only, until it is attacked', () => {
+    const s = game([{}, {}], [9, 4, 1]);
+    let { state } = apply(s, 'p0', { type: 'act', action: { type: 'shieldSelf' } });
+    expect(viewFor(state, 'p0').players[0]).toMatchObject({ shield: { rank: 9 }, shieldPrivate: true });
+    expect(viewFor(state, 'p1').players[0]).toMatchObject({ shield: { hidden: true }, shieldPrivate: false });
+    expect(viewFor(state, null).players[0]!.shield).toEqual({ hidden: true });
+    state = apply(state, 'p1', attack('p0')).state;
+    expect(viewFor(state, 'p1').players[0]).toMatchObject({ shield: { rank: 9 }, shieldPrivate: false });
+    expect(viewFor(state, 'p0').players[0]!.shieldPrivate).toBe(false);
+  });
+
+  it('a shield someone else gives you stays secret to you, and to them', () => {
+    const s = game([{}, { shieldSeenByOwner: true }], [9]);
+    const { state } = apply(s, 'p0', { type: 'act', action: { type: 'shieldOther', target: 'p1' } });
+    expect(viewFor(state, 'p1').players[1]!.shield).toEqual({ hidden: true });
+    expect(viewFor(state, 'p0').players[1]!.shield).toEqual({ hidden: true });
   });
 });
 
@@ -330,6 +355,13 @@ describe('invariants over random bot games (2–8 players)', () => {
           for (const p of s.players) {
             for (const c of p.charge) expect(leak).not.toContain(`"id":"${c.id}"`);
             if (p.shield && !p.shieldRevealed) expect(leak).not.toContain(`"id":"${p.shield.id}"`);
+          }
+          for (const viewer of s.players) {
+            const seen = JSON.stringify(viewFor(s, viewer.id));
+            for (const p of s.players) {
+              const secret = p.shield && !p.shieldRevealed && !(p.shieldSeenByOwner && p.id === viewer.id);
+              if (secret) expect(seen).not.toContain(`"id":"${p.shield!.id}"`);
+            }
           }
         }
       }),

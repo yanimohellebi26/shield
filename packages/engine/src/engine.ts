@@ -53,6 +53,7 @@ export function createGame(opts: NewGameOptions): GameState {
       hp: sum(life),
       shield: take(),
       shieldRevealed: false,
+      shieldSeenByOwner: false,
       charge: [],
       lifeSwapUsed: false,
       eliminated: false,
@@ -224,6 +225,8 @@ function resolveAction(state: GameState, me: Player, action: Action, events: Gam
       if (oldShield) state.discard.push(oldShield);
       target.shield = card;
       target.shieldRevealed = false;
+      // You may look at a shield you give yourself, not at one someone else gives you.
+      target.shieldSeenByOwner = action.type === 'shieldSelf';
       events.push({ type: 'shieldChange', player: me.id, target: target.id, oldShield });
       return;
     }

@@ -321,7 +321,7 @@ async function pump() {
   const { animateEvent } = await import('./director');
   for (const e of next!.events) {
     try {
-      await withTimeout(animateEvent(e), 15000);
+      await withTimeout(animateEvent(e, next!.view), 15000);
     } catch (err) {
       console.error(`Animation of "${e.type}" failed; continuing`, err);
     }

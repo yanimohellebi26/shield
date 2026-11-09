@@ -8,10 +8,10 @@ import { useLang } from './prefs';
 import { useTargetNumbers } from './Hud';
 import { IconCharge, IconHeart, IconLifeSwap, IconOut, IconShieldValue } from './icons';
 
-function Anchored({ pos, className, children, onClick }: { pos: Vec3; className?: string; children: React.ReactNode; onClick?: () => void }) {
+function Anchored({ pos, className, children, onClick, title }: { pos: Vec3; className?: string; children: React.ReactNode; onClick?: () => void; title?: string }) {
   const ref = useAnchor(pos);
   return (
-    <div ref={ref} className={`anchored ${className ?? ''}`} onClick={onClick}>
+    <div ref={ref} className={`anchored ${className ?? ''}`} onClick={onClick} title={title}>
       {children}
     </div>
   );
@@ -131,10 +131,16 @@ function ShieldTag({ player, seat }: { player: PlayerView; seat: SeatLayout }) {
   const shield = ov.shieldCard[player.id] ?? player.shield;
   if (!shield || ov.hideShield[player.id] || player.eliminated) return null;
   const [x, , z] = slotPos(seat, 'shield');
+  // Your own self-chosen shield: you see it, the others don't yet.
+  const secret = player.shieldPrivate && !ov.shieldCard[player.id];
   return (
-    <Anchored pos={[x, 0.1, z - 0.62 * seat.scale]} className={`shield-tag ${isHidden(shield) ? 'hidden' : ''}`}>
+    <Anchored
+      pos={[x, 0.1, z - 0.62 * seat.scale]}
+      className={`shield-tag ${isHidden(shield) ? 'hidden' : ''} ${secret ? 'secret' : ''}`}
+      title={secret ? t('seat.shieldSecretHint') : undefined}
+    >
       <IconShieldValue />
-      {isHidden(shield) ? t('seat.shield') : `${t('seat.shield')} ${shield.rank}`}
+      {isHidden(shield) ? t('seat.shield') : secret ? t('seat.shieldSecret', { n: shield.rank }) : `${t('seat.shield')} ${shield.rank}`}
     </Anchored>
   );
 }

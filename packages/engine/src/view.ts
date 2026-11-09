@@ -16,6 +16,8 @@ export interface PlayerView {
   life: Card[];
   hp: number;
   shield: SlotCard | null;
+  /** The shield is shown to this viewer only (their own, self-chosen, not yet attacked). */
+  shieldPrivate: boolean;
   chargeCount: number;
   lifeSwapUsed: boolean;
   eliminated: boolean;
@@ -44,7 +46,8 @@ export function viewFor(state: GameState, viewer: string | null): GameView {
       name: p.name,
       life: p.life.map((c) => ({ ...c })),
       hp: p.hp,
-      shield: p.shield ? (p.shieldRevealed ? { ...p.shield } : { hidden: true }) : null,
+      shield: p.shield ? (p.shieldRevealed || (p.shieldSeenByOwner && p.id === viewer) ? { ...p.shield } : { hidden: true }) : null,
+      shieldPrivate: !!p.shield && !p.shieldRevealed && p.shieldSeenByOwner && p.id === viewer,
       chargeCount: p.charge.length,
       lifeSwapUsed: p.lifeSwapUsed,
       eliminated: p.eliminated,

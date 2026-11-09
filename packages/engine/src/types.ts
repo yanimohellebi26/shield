@@ -14,9 +14,14 @@ export interface Player {
   /** Cards currently representing life (face up). Display only: HP is tracked in `hp`. */
   life: Card[];
   hp: number;
-  /** Unknown to everyone, owner included, until attacked. */
+  /**
+   * Face down until attacked, then face up for everyone. While face down, nobody knows it,
+   * except the owner when they put it there themselves ("change my shield").
+   */
   shield: Card | null;
   shieldRevealed: boolean;
+  /** The owner drew this shield for themselves, so they may look at it. */
+  shieldSeenByOwner: boolean;
   /** Charged cards, face down and unknown to everyone until the next attack. */
   charge: Card[];
   lifeSwapUsed: boolean;

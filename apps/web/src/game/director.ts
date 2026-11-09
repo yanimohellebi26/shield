@@ -1,4 +1,4 @@
-import { cardLabel, type Card, type GameView } from '@shield/engine';
+import { cardLabel, isHidden, type Card, type GameView } from '@shield/engine';
 import {
   deckPos,
   isPortrait,
@@ -180,7 +180,8 @@ async function toDiscard(items: { id: string; from: Vec3; card: Card; flip?: num
   );
 }
 
-export async function animateEvent(e: UiEvent): Promise<void> {
+/** `after` is the view that will be committed once this batch has played (used to know what the local player may see). */
+export async function animateEvent(e: UiEvent, after?: GameView): Promise<void> {
   const S = seats();
   switch (e.type) {
     case 'shuffle': {
@@ -326,12 +327,16 @@ export async function animateEvent(e: UiEvent): Promise<void> {
       const discarding = e.oldShield
         ? toDiscard([{ id: 'old', from: oldPos, card: e.oldShield, flip: FACE_DOWN, scale: target.scale }])
         : Promise.resolve();
+      // A shield you give yourself is yours to look at: it lands face up on your side only.
+      const seen = after?.players.find((p) => p.id === e.target)?.shield;
+      const seenCard = seen && !isHidden(seen) ? seen : null;
       drawFromDeck();
       await wait(120);
       await fly('ns', {
         from: lift(deckPos(), 0.3),
         to: oldPos,
         fromFlip: FACE_DOWN,
+        ...(seenCard ? { card: seenCard, toFlip: FACE_UP } : {}),
         duration: 0.65,
         arc: 1.8,
         glow: '#5aa9ff',
@@ -343,7 +348,9 @@ export async function animateEvent(e: UiEvent): Promise<void> {
       useGame.setState({
         shown: {
           ...get().shown!,
-          players: get().shown!.players.map((p) => (p.id === e.target ? { ...p, shield: { hidden: true } } : p)),
+          players: get().shown!.players.map((p) =>
+            p.id === e.target ? { ...p, shield: seenCard ?? { hidden: true }, shieldPrivate: !!seenCard } : p,
+          ),
         },
       });
       ov((o) => {
@@ -439,7 +446,9 @@ export async function animateEvent(e: UiEvent): Promise<void> {
 
       // 4. Impact: reveal the shield if it was hidden.
       useGame.setState((s) => ({ shake: s.shake + (e.damage > 0 ? Math.min(1, 0.35 + e.damage / 14) : 0.25) }));
-      if (e.shieldWasHidden) {
+      // The owner may already see a shield they chose themselves: no flip for them.
+      const shownShield = get().shown?.players.find((p) => p.id === e.target)?.shield;
+      if (e.shieldWasHidden && !(shownShield && !isHidden(shownShield))) {
         ov((o) => {
           o.hideShield[e.target] = true;
         });
@@ -462,6 +471,10 @@ export async function animateEvent(e: UiEvent): Promise<void> {
         });
         clear('shieldflip');
       }
+      // Once attacked, the shield is public: it stops being "secret" on its owner's side.
+      useGame.setState({
+        shown: { ...get().shown!, players: get().shown!.players.map((p) => (p.id === e.target ? { ...p, shieldPrivate: false } : p)) },
+      });
       burst(shieldAt, e.damage > 0 ? '#ff4b3a' : '#5aa9ff', e.damage > 0 ? 1.4 : 1.1);
       play(e.damage > 0 ? 'hit' : 'block', { volume: e.damage > 0 ? Math.min(1, 0.6 + e.damage / 20) : 0.8 });
       ov((o) => {

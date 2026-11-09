@@ -1,0 +1,13 @@
+# Render Blueprint: the online game server (Colyseus, WebSocket).
+services:
+  - type: web
+    name: shield-server
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm ci --include=dev
+    startCommand: npm start -w @shield/server
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
